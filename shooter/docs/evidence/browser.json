@@ -1,0 +1,12 @@
+{
+  "telemetry": {
+    "snapshots": 91,
+    "fps": 35.17722387935074,
+    "corrections": 0,
+    "predictionError": 0,
+    "rtt": 0
+  },
+  "errors": [],
+  "browser": "Chromium headless SwiftShader",
+  "fpsPass": true
+}
