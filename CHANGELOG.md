@@ -1,5 +1,13 @@
 # Changelog
 
+## Blackthorn House — 24 October 2026
+- Replaced the active arena with a six-room horror mansion, furniture cover, room clues and limited spherical illumination.
+- Added exactly two players, three rounds, role reversal, 20s hiding, five 20s/7s cycles, and a final simultaneous hunt.
+- Added six-shot revolvers, unarmed hiders, crouching hitboxes, survival wins, match scoring, disconnect pauses and rematches.
+- Replaced capsules with low-poly human figures and rebuilt menu/HUD for the mansion.
+- Instanced static geometry; current scene is about 5,200 triangles / 52 draw calls.
+- Passed 15 unit/server checks and a two-browser full-flow check; updated documentation and retired obsolete arena script shortcuts.
+
 ## POV and close-range fixes — 24 October 2026
 - Replaced random swaps with three fixed 5s-own / 15s-borrowed cycles in a 60-second round, with countdown sounds.
 - Fixed dynamic capsule culling, reduced near clipping, and expanded visibility coverage around body and camera.

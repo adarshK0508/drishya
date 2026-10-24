@@ -1,13 +1,14 @@
-# Decisions
+# Decisions — Blackthorn House revision
 
-- Preserve the existing Unity prototype untouched; its LAN JPEG camera exchange establishes the core mechanic: another player's eyes while controlling your own body.
-- Focus this repository on the local Node multiplayer shooter, following the user's final project choice.
-- Use Node 24 (installed); the shooter requires Node 20 or newer.
-- User-confirmed revision: 60-second rounds repeat 5 seconds own POV and 15 seconds borrowed POV three times; this replaces randomized and kill-triggered timing. Score targets no longer end rounds early.
-- Show and beep all five own-POV seconds, but only the final three borrowed-POV seconds; the last cycle announces round end.
-- Keep control and firing on the original body while the camera follows the other pilot's position, aim and FOV. Muzzle effects remain in world space at the shooter; only own-view firing shakes the camera.
-- Transmit vertical velocity for jump reconciliation and disable stale aggregate capsule culling; keep all arena players within the interest radius.
-
-- Repository-local Git identity is Hackathon Builder <builder@localhost>, because no author identity was configured; no global Git settings changed.
-- A previous wall-clock soak crossed a machine sleep; its tick average is invalid. The final endurance gate counts active simulation ticks and excludes suspension gaps from tick-time averages.
-- Low graphics quality uses a 0.55 pixel ratio when FPS stays below 45 for two seconds; this preserves headless/software-renderer playability while a user can select higher quality on a GPU.
+- Continue the browser/LAN implementation in `shooter/`. Preserve the original Unity prototype.
+- Exactly two players; the host hunts first. All three rounds play, one point per round, most points wins. This is the chosen interpretation of the unspecified overall match scoring.
+- Use the final explicit cycle timings: 20 seconds own POV, 7 seconds borrowed POV, five cycles. This totals 135 seconds of search, plus 20 seconds hiding in rounds 1–2. It supersedes the earlier 2-minute target.
+- Only the hunter borrows the hider's view in rounds 1–2. Hiders retain their view. Both can move and aim during reveals; inputs always control the original body.
+- Final round: both armed, reciprocal swaps, five-second countdown, first kill wins that round. Timeout or both empty guns draws the round. Equal match points draw the match.
+- One revolver, six shots per hunter per round, no reloads or pickups. Two body hits or one headshot kills. Hiders have no weapons. Exhaustion ends a hunt early with a survival win.
+- Crouching lowers camera and hitbox. Disable jumping so furniture and room partitions cannot be climbed out of.
+- A 42m square mansion has six connected rooms, cover alcoves, distinguishable patterns and clocks. Pattern ceilings to reduce the usefulness of staring straight up during a reveal.
+- No minimap or opponent labels. A single camera-local light and fog limit sight distance. Characters are low-poly figures with body parts and simple leg motion.
+- Shared furniture descriptions drive drawing and collision. Batch static boxes by material, share geometry, use small local textures and cap resolution. No external models or texture downloads.
+- Pause on disconnect for 30 seconds, resume with shifted timers, otherwise forfeit. No respawns within a round. Clear queued inputs and lag history at round boundaries.
+- Prior arena soak metrics and demo claims are historical. Current acceptance checks cover the mansion rules and browser flow; human balance and real-LAN latency require playtesting.

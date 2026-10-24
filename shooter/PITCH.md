@@ -1,15 +1,9 @@
-# Five slides
+# Blackthorn House — pitch notes
 
-1. **Your eyes are a shared resource.** A local-network competitive arena with periodic borrowed POV while your own body remains under your control.
-2. **Original idea, modern architecture.** Original Unity exchanged JPEG camera frames. This implementation synchronizes one authoritative world and exchanges camera targets.
-3. **Network engineering.** 60 Hz fixed simulation, 20 Hz binary delta snapshots, prediction/reconciliation, adaptive interpolation, bounded historical hitboxes, validation and reconnect tokens.
-4. **Live demonstration and evidence.** Two players, view rotation, minimap navigation, then measured browser/bot test results. Distinguish software-rendered FPS from real laptop GPU performance.
-5. **Next milestone.** More vertical map geometry, weapon animation, larger human latency trials and stronger admission control for public matchmaking.
+1. **Hide from someone who can see through your eyes.** A two-player horror hunt in an old mansion. The hider must conceal their body and choose what their gaze gives away.
+2. **Learn the house.** Clocks, rugs, wallpaper and ceiling patterns turn brief glimpses into location clues. Small pools of light make recognition useful.
+3. **Make six shots count.** The hider is unarmed. Hunters have one revolver and six bullets per round. Survival wins; roles reverse; the final round arms both players.
+4. **One shared world.** The server runs movement and combat; borrowing a viewpoint changes only camera ownership. Controls still act on the original body.
+5. **Next validation.** Human playtesting of darkness, room recognition and ammunition pressure. Measure FPS on the intended laptops and conduct a real LAN session.
 
-## Judge Q&A
-- **Can clients teleport or claim hits?** No position/target messages are accepted. Shared input semantics execute on the server; rays and health are server-owned.
-- **Can clients cheat time?** Input timestamps are clamped to 200 ms. This is bounded rewind, not complete competitive-grade clock trust.
-- **Scale?** Eight players per process-local room. Route rooms to shards; do not split a room's simulation across replicas.
-- **Offline?** LAN requires no internet after npm install; Three.js and generated assets are local.
-- **Is every requirement complete?** No. README identifies deliberate prototype limitations; TEST_REPORT lists only measurements actually run.
-- **Leak-free?** Bounded history and queues reduce risk; a finite soak is evidence, never proof.
+The prototype supports exactly two players per room. Static geometry is instanced and textures are generated locally; gameplay needs no Internet after installation. Current evidence includes 15 unit/server tests and a two-browser flow check. Historical arena soak metrics do not describe this revision.

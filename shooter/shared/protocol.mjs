@@ -45,6 +45,7 @@ export function signature(p) {
     p.fov,
     p.weapon,
     p.seq,
+    p.crouched,
   ].join(",");
 }
 export function snapshot(players, tick, time, ack, full = false) {
@@ -72,7 +73,7 @@ export function snapshot(players, tick, time, ack, full = false) {
     v.setUint8(o + 19, p.weapon);
     v.setUint32(o + 20, p.seq);
     v.setUint8(o + 24, p.team);
-    v.setUint8(o + 25, p.spectator ? 1 : 0);
+    v.setUint8(o + 25, (p.spectator ? 1 : 0) | (p.crouched ? 2 : 0));
     v.setInt16(o + 26, Math.round((p.vy || 0) * 100));
   });
   return b;
@@ -104,7 +105,8 @@ export function readSnapshot(b) {
       weapon: v.getUint8(o + 19),
       seq: v.getUint32(o + 20),
       team: v.getUint8(o + 24),
-      spectator: !!v.getUint8(o + 25),
+      spectator: !!(v.getUint8(o + 25) & 1),
+      crouched: !!(v.getUint8(o + 25) & 2),
     });
   }
   return {

@@ -2,145 +2,128 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PARALLAX / See differently. Fight together.</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#080b0b" />
     <link rel="icon" href="data:," />
+    <title>PARALLAX — Blackthorn House</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <canvas id="game" aria-label="Three dimensional arena"></canvas>
+    <canvas id="game" aria-label="Blackthorn mansion game"></canvas>
     <div class="grain"></div>
+    <div class="vignette"></div>
     <main id="menu">
       <nav>
-        <b>◈ PARALLAX</b><span>EXPERIMENTAL COMBAT SYSTEM / 01</span
-        ><button id="help">FIELD MANUAL ↗</button>
+        <b>PARALLAX<span class="brand-dot">◆</span></b
+        ><span>BLACKTHORN HOUSE / CHAPTER 01</span
+        ><button id="help" class="ghost">HOW TO PLAY ↗</button>
       </nav>
       <section class="hero">
-        <p class="eyebrow">YOUR BODY. SOMEONE ELSE’S EYES.</p>
-        <h1>TRUST YOUR<br /><em>OTHER SENSES.</em></h1>
+        <p class="eyebrow">A TWO-PLAYER GAME OF HIDE & HUNT</p>
+        <h1>The house has<br />someone else’s<br /><em>eyes.</em></h1>
         <p class="intro">
-          A multiplayer arena where your perspective is never yours to keep.<br />Map
-          your movement. Borrow a view. Make the shot.
+          Hide in its shadows. Borrow their sight.<br />Six bullets. Three
+          rounds. One way out.
         </p>
         <div class="join">
           <label
-            >CALLSIGN<input
+            >YOUR NAME<input
               id="name"
               maxlength="18"
-              value="Pilot"
-              autocomplete="nickname" /></label
+              placeholder="Stranger"
+              value="Stranger"
+              autocomplete="off" /></label
           ><label
-            >ROOM CODE<input
+            >ROOM CODE <span>optional</span
+            ><input
               id="code"
               maxlength="4"
-              placeholder="QUICK MATCH" /></label
-          ><button id="join">ENTER THE ARENA <span>↗</span></button
-          ><label class="check"
-            ><input type="checkbox" id="spectator" /> Join as spectator</label
-          >
+              placeholder="NEW ROOM"
+              autocomplete="off" /></label
+          ><button id="join">ENTER THE HOUSE <span>↗</span></button>
         </div>
         <p id="status" role="status">
-          LOCAL NETWORK · NO ACCOUNT · UP TO 8 PLAYERS
+          2 PLAYERS · SAME SERVER / LOCAL NETWORK · HEADPHONES RECOMMENDED
         </p>
       </section>
+      <aside class="house-note">
+        <span>EST. 1893</span>
+        <p>Some rooms<br />remember you.</p>
+        <i>51° 28′ N &nbsp; / &nbsp; 00° 07′ W</i>
+      </aside>
       <footer>
-        <span>01 / PERSPECTIVE SWAP</span
-        ><span>60 Hz AUTHORITY / PROCEDURAL WORLD</span
-        ><span>SYNTAX ERROR 2026</span>
+        <span>01 &nbsp; HIDE</span><span>02 &nbsp; HUNT</span
+        ><span>03 &nbsp; FACE EACH OTHER</span
+        ><span class="footer-note">DON’T TRUST WHAT YOU SEE.</span>
       </footer>
     </main>
     <section id="lobby" class="panel hidden">
-      <p class="eyebrow">SQUAD ASSEMBLY</p>
+      <p class="eyebrow">TWO STRANGERS. ONE HOUSE.</p>
       <h2>Room <span id="roomcode"></span></h2>
-      <p>Share this code with players on this server.</p>
+      <p>Open this server on the other laptop and enter this code.</p>
       <div id="roster"></div>
-      <div class="settingsgrid">
-        <label
-          >Mode<select id="mode">
-            <option value="swap">Perspective Swap</option>
-            <option value="team">Team Deathmatch</option>
-            <option value="lms">Last Man Standing</option>
-          </select></label
-        ><label
-          >POV cycle<select id="variant" disabled>
-            <option value="rotation">5s own → 15s swapped × 3</option>
-          </select></label
-        ><label
-          >Arena<select id="map">
-            <option value="0">The Exchange</option>
-            <option value="1">Split Signal</option>
-          </select></label
-        ><label
-          >World theme<select id="theme">
-            <option value="0">Neon Grid</option>
-            <option value="1">Desert</option>
-            <option value="2">Industrial</option>
-            <option value="3">Retro Pixel</option>
-          </select></label
-        >
-        <label class="hidden"
-          >Score limit<input
-            id="limit"
-            type="number"
-            min="5"
-            max="100"
-            value="20"
-        /></label>
-        <label
-          >Match seconds<input
-            id="duration"
-            type="number"
-            min="60"
-            max="60"
-            value="60"
-            disabled
-        /></label>
+      <div class="rules">
+        <div>
+          <small>THE HUNT</small><strong>20s alone. 7s in their eyes.</strong>
+          <p>Five cycles, after 20 seconds to hide.</p>
+        </div>
+        <div>
+          <small>THE STAKES</small
+          ><strong>Six shots. No second magazine.</strong>
+          <p>Hiders have no gun. Survive to win.</p>
+        </div>
       </div>
-      <button id="ready">READY UP</button>
-      <button id="start">START MATCH ↗</button>
-      <p id="lobbyhint"></p>
+      <p class="lobby-rules">
+        Round 1: host hunts. Round 2: roles reverse.<br />Round 3: both hunt.
+        First kill wins the round.<br />All three rounds are played. Most round
+        wins takes the match.
+      </p>
+      <button id="ready">I’M READY</button
+      ><button id="start">OPEN THE DOORS ↗</button>
+      <p id="lobbyhint" role="status"></p>
     </section>
     <div id="hud" class="hidden">
       <header>
-        <b>◈ PARALLAX</b><span id="timer">01:00</span
-        ><button id="settingsbtn">SETTINGS</button>
+        <b>PARALLAX <span>/ BLACKTHORN</span></b
+        ><span id="timer">0:20</span
+        ><button id="settingsbtn" class="ghost">SETTINGS</button>
       </header>
-      <div id="viewlabel">YOUR PERSPECTIVE</div>
-      <div id="matchscore" aria-live="off"></div>
-      <div id="connection" class="hidden" role="status"></div>
+      <div id="viewlabel">YOUR EYES</div>
+      <div id="matchscore"></div>
+      <div id="cycle"></div>
       <div id="countdown"></div>
-      <div id="crosshair">+</div>
+      <div id="crosshair">·</div>
       <div id="hitmarker"></div>
       <div id="feed"></div>
       <div id="damageflash"></div>
-      <div id="scopeview" class="hidden" aria-hidden="true"></div>
-      <canvas
-        id="mini"
-        width="180"
-        height="180"
-        aria-label="Minimap showing your real body"
-      ></canvas>
-      <div class="bottom">
-        <span id="health">100 / HEALTH</span><span id="weapon">PISTOL</span
-        ><span id="ammo">12</span>
+      <div id="waiting" class="hidden">
+        <p class="eyebrow">BLACKTHORN HOUSE</p>
+        <h2 id="waitingtitle">Let them hide.</h2>
+        <p id="waitingtext"></p>
       </div>
+      <div class="bottom">
+        <span id="health">100 / VITALITY</span><span id="weapon">UNARMED</span
+        ><span id="ammo">—</span>
+      </div>
+      <p id="objective"></p>
       <p class="hint" id="lockhint">
-        CLICK ARENA TO CAPTURE MOUSE · WASD MOVE · 1–4 WEAPONS · R RELOAD · G
-        GRENADE
+        CLICK TO CAPTURE MOUSE · WASD MOVE · SHIFT SPRINT · CTRL CROUCH · ESC
+        RELEASE
       </p>
-      <button id="spectateNext" class="hidden">NEXT PLAYER →</button>
     </div>
+    <div id="connection" class="hidden" role="status"></div>
     <div id="stats" class="hidden"></div>
     <dialog id="settings">
-      <h2>Field settings</h2>
+      <p class="eyebrow">KEEP YOUR NERVE</p>
+      <h2>Before the dark.</h2>
       <label
-        >Quality<select id="quality">
+        >RENDER QUALITY<select id="quality">
           <option>Low</option>
           <option selected>Medium</option>
           <option>High</option>
         </select></label
       ><label
-        >Sensitivity<input
+        >MOUSE SENSITIVITY<input
           id="sensitivity"
           type="range"
           min="0.5"
@@ -148,14 +131,7 @@
           step="0.1"
           value="1" /></label
       ><label
-        >Field of view<input
-          id="fov"
-          type="range"
-          min="55"
-          max="110"
-          value="75" /></label
-      ><label
-        >Volume<input
+        >SOUND<input
           id="volume"
           type="range"
           min="0"
@@ -164,16 +140,21 @@
           value="0.3"
       /></label>
       <p>
-        WASD move · Shift sprint · Space jump · Ctrl crouch<br />Mouse aim ·
-        left click shoot · right click scope<br />1–4 weapons · R reload · G
-        shock grenade · F3 telemetry<br />Escape releases mouse. During swaps,
-        the minimap marks your own body in white.
+        WASD move · Shift sprint · Ctrl crouch<br />Mouse look · Left click
+        shoot · F3 diagnostics<br /><br />You always control your own body, even
+        when the hunter sees through the hider’s eyes. The hider keeps their own
+        view. The view is live: choose your gaze carefully.<br /><br />Two body
+        hits or one headshot. Six bullets per round. No reloads, pickups or
+        grenades.<br /><br />In the final round, both players exchange views. If
+        time or both guns run out, that round is a draw. Settings do not pause
+        the match.
       </p>
-      <button id="closeSettings">BACK TO ARENA</button>
+      <button id="closeSettings">BACK TO THE HOUSE</button>
     </dialog>
     <dialog id="results">
-      <p class="eyebrow">SIGNAL COMPLETE</p>
-      <h2>Match results</h2>
+      <p class="eyebrow">THE HOUSE REMEMBERS</p>
+      <h2 id="resulttitle">Match results</h2>
+      <p id="resultreason"></p>
       <div id="scores"></div>
       <button id="returnLobby">BACK TO LOBBY</button>
     </dialog>

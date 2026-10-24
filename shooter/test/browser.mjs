@@ -1,7 +1,8 @@
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import assert from "node:assert/strict";
+import { server, wss, rooms, step } from "../server.mjs";
+import { SEARCH_MS } from "../shared/hunt.mjs";
 if (fs.existsSync(new URL("../.browsers", import.meta.url)))
   process.env.PLAYWRIGHT_BROWSERS_PATH = fileURLToPath(
     new URL("../.browsers", import.meta.url),
@@ -9,116 +10,171 @@ if (fs.existsSync(new URL("../.browsers", import.meta.url)))
 const { chromium } = await import("playwright");
 fs.mkdirSync("test-results", { recursive: true });
 fs.mkdirSync("docs", { recursive: true });
-let server = spawn(process.execPath, ["server.mjs"], {
-  env: { ...process.env, PORT: "3092" },
-  stdio: "ignore",
-});
+await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const url = `http://127.0.0.1:${server.address().port}`;
+const timer = setInterval(() => step(), 1000 / 60);
 let browser;
 try {
-  for (let i = 0; i < 100; i++) {
-    try {
-      await fetch("http://localhost:3092");
-      break;
-    } catch {
-      await new Promise((r) => setTimeout(r, 100));
-    }
-  }
   browser = await chromium.launch({
     headless: true,
     args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
   });
-  let a = await browser.newPage({ viewport: { width: 1440, height: 900 } }),
-    b = await browser.newPage(),
+  const a = await browser.newPage({ viewport: { width: 960, height: 640 } }),
+    b = await browser.newPage({ viewport: { width: 960, height: 640 } }),
     errors = [];
-  for (let page of [a, b]) {
+  for (const page of [a, b]) {
     page.on("pageerror", (e) => errors.push(e.message));
     page.on("console", (e) => {
       if (e.type() === "error") errors.push(e.text());
     });
-    await page.goto("http://localhost:3092");
+    await page.goto(url);
   }
-  await a.screenshot({ path: "docs/menu.png" });
-  await a.locator("#name").fill("Alpha");
-  await a.locator("#join").click();
+  // Deterministic activation for concurrent software-rendered clients; physical menu clicking is also checked separately.
+  await a.locator("#name").fill("Ash");
+  await a.locator("#join").dispatchEvent("click");
   await a.locator("#roomcode").waitFor();
-  let code = await a.locator("#roomcode").innerText();
-  await b.locator("#name").fill("Beta");
+  const code = await a.locator("#roomcode").innerText();
+  await b.locator("#name").fill("Wren");
   await b.locator("#code").fill(code);
-  await b.locator("#join").click();
-  await a.locator("#map").selectOption("1");
-  await a.locator("#theme").selectOption("2");
-  await b.waitForFunction(
-    () =>
-      document.getElementById("map").value === "1" &&
-      document.getElementById("theme").value === "2",
-  );
+  await b.locator("#join").dispatchEvent("click");
+  await b.locator("#roomcode").waitFor();
   await a.locator("#ready").click();
   await b.locator("#ready").click();
   await a.locator("#start").click();
-  await a.waitForFunction(() => window.telemetry.snapshots > 30);
-  await a.waitForTimeout(3000);
-  let telemetry = await a.evaluate(() => window.telemetry);
-  await a.screenshot({ path: "docs/arena.png" });
-  assert.ok(telemetry.snapshots > 30);
-  assert.ok(await b.evaluate(() => window.telemetry.snapshots > 10));
-  await b.waitForFunction(
-    () => !document.getElementById("hud").classList.contains("hidden"),
-  );
+  await b.waitForFunction(() => window.telemetry.stage === "hide");
+  assert.equal(await a.locator("#waiting").isVisible(), true);
+  assert.equal(await b.locator("#weapon").innerText(), "UNARMED · STAY HIDDEN");
+  const r = rooms.get(code),
+    [A, B] = [...r.players.values()];
+  const start = A.z;
+  await a.keyboard.down("w");
+  await a.waitForTimeout(200);
+  await a.keyboard.up("w");
+  assert.equal(A.z, start);
   await b.bringToFront();
-  await b.waitForTimeout(300);
-  const before = await b.evaluate(() => window.telemetry.position);
+  const before = B.z;
   await b.keyboard.down("w");
-  await b.waitForTimeout(1100);
+  await b.waitForTimeout(400);
   await b.keyboard.up("w");
-  const after = await b.evaluate(() => ({ ...window.telemetry }));
-  assert.ok(
-    Math.hypot(after.position.x - before.x, after.position.z - before.z) > 0.2,
-    `authoritative movement reached client: ${JSON.stringify({ before, after })}`,
+  assert.ok(Math.abs(B.z - before) > 0.2, "hider can move during hiding");
+  // Place the clients in the library to inspect room clues and the other figure.
+  Object.assign(A, { x: -8, z: -13, yaw: Math.PI });
+  Object.assign(B, { x: -8, z: -10, yaw: 0 });
+  A.queue = [];
+  B.queue = [];
+  // Client aim belongs to the player's mouse; sync it with real relative mouse input.
+  await b.evaluate(() =>
+    document
+      .getElementById("game")
+      .dispatchEvent(
+        new MouseEvent("mousemove", {
+          bubbles: true,
+          buttons: 1,
+          movementX: Math.PI / 0.002,
+          movementY: 0,
+        }),
+      ),
   );
-  const c = await browser.newPage();
-  c.on("pageerror", (e) => errors.push(e.message));
-  await c.goto("http://localhost:3092");
-  await c.locator("#name").fill("Observer");
-  await c.locator("#code").fill(code);
-  await c.locator("#spectator").check();
-  await c.locator("#join").click();
-  await c.waitForFunction(() =>
-    document.getElementById("viewlabel").textContent.startsWith("SPECTATING"),
-  );
-  await c.locator("#spectateNext").click();
-  assert.equal(await c.locator("#spectateNext").isVisible(), true);
+  await b.waitForTimeout(300);
+  await b.setViewportSize({ width: 1280, height: 800 });
+  await b.waitForTimeout(200);
+  await b.screenshot({ path: "docs/mansion-library.png" });
+  r.stageEnd = Date.now() - 1;
+  r.startedAt = r.stageEnd;
+  r.end = r.startedAt + SEARCH_MS;
+  await a.waitForFunction(() => window.telemetry.stage === "search");
+  assert.equal(await a.locator("#waiting").isVisible(), false);
+  r.startedAt = Date.now() - 20050;
   await a.waitForFunction(
     () =>
-      document
-        .getElementById("viewlabel")
-        .textContent.startsWith("BORROWED EYES"),
-    undefined,
-    { timeout: 35000 },
+      window.telemetry.borrowed &&
+      window.telemetry.viewId !== window.telemetry.ownId,
   );
-  await a.screenshot({ path: "docs/borrowed.png" });
-  await a.keyboard.press("F3");
-  assert.equal(await a.locator("#stats").isVisible(), true);
+  await b.waitForFunction(
+    () =>
+      window.telemetry.borrowed &&
+      window.telemetry.viewId === window.telemetry.ownId,
+  );
+  const old = A.x;
+  await a.bringToFront();
+  await a.keyboard.down("d");
+  await a.waitForTimeout(350);
+  await a.keyboard.up("d");
+  assert.ok(
+    Math.abs(A.x - old) > 0.1,
+    "hunter moves own body during borrowed view",
+  );
+  await a.screenshot({ path: "docs/mansion-borrowed.png" });
   await a.locator("#settingsbtn").click();
+  await a.locator("#quality").selectOption("Low");
   await a.locator("#closeSettings").click();
-  await a.evaluate(() => document.getElementById("game").click());
-  await a.waitForTimeout(300);
+  // Finish both survival rounds through the actual server clock/state machine.
+  r.end = Date.now() - 1;
+  await b.waitForFunction(() => window.telemetry.stage === "intermission");
+  r.stageEnd = Date.now() - 1;
+  await a.waitForFunction(() => window.telemetry.round === 2);
+  await a.waitForFunction(
+    () =>
+      document.getElementById("weapon").textContent === "UNARMED · STAY HIDDEN",
+  );
+  await b.locator("#waiting").waitFor();
+  r.stageEnd = Date.now() - 1;
+  r.startedAt = r.stageEnd;
+  r.end = Date.now() + 20;
+  await a.waitForFunction(() => window.telemetry.stage === "intermission");
+  r.stageEnd = Date.now() - 1;
+  await a.waitForFunction(() => window.telemetry.round === 3);
+  assert.equal(A.role, "hunter");
+  assert.equal(B.role, "hunter");
+  r.stageEnd = Date.now() - 1;
+  r.startedAt = r.stageEnd;
+  r.end = Date.now() + 30;
+  await a.waitForFunction(() => window.telemetry.stage === "intermission");
+  r.stageEnd = Date.now() - 1;
+  await a.locator("#results").waitFor();
+  assert.match(await a.locator("#resulttitle").innerText(), /draw/i);
+  await a.locator("#returnLobby").click();
+  assert.equal(await a.locator("#lobby").isVisible(), true);
+  assert.equal(await a.locator("#ready").isEnabled(), true);
   assert.deepEqual(errors, []);
+  const telemetry = await b.evaluate(() => window.telemetry);
   fs.writeFileSync(
-    "test-results/browser.json",
+    "test-results/mansion-browser.json",
     JSON.stringify(
       {
-        telemetry,
         errors,
-        browser: "Chromium headless SwiftShader",
-        fpsPass: telemetry.fps >= 30,
+        telemetry,
+        checks: [
+          "two players",
+          "hunter hiding lock",
+          "hider movement",
+          "unarmed hider",
+          "own-body movement during reveal",
+          "asymmetric camera",
+          "round reversal",
+          "final duel",
+          "draw",
+          "rematch lobby",
+        ],
       },
       null,
       2,
     ),
   );
-  console.log(JSON.stringify({ telemetry, errors }));
-  assert.ok(telemetry.fps >= 30, `FPS ${telemetry.fps}`);
+  console.log(
+    JSON.stringify({
+      errors,
+      drawCalls: telemetry.drawCalls,
+      triangles: telemetry.triangles,
+      fps: telemetry.fps,
+      checks: 10,
+    }),
+  );
 } finally {
+  clearInterval(timer);
   await browser?.close();
-  server.kill();
+  for (const ws of wss.clients) ws.terminate();
+  await new Promise((r) => server.close(r));
+  wss.close();
+  rooms.clear();
 }

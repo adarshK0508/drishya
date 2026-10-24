@@ -61,12 +61,11 @@ test("room lifecycle, schema rejection, reconnect, host migration and capacity",
     await migration;
     let [reconnected, again] = await join({ token: one.token });
     assert.equal(again.id, one.id);
-    for (let n = 0; n < 6; n++) await join({ code: one.code });
     let overflow = await join({ code: one.code });
-    assert.equal(overflow[1].message, "Room full (8 players)");
+    assert.equal(overflow[1].message, "Room full (2 players)");
     let metric = await (await fetch("http://127.0.0.1:3093/metrics")).json();
     assert.ok(metric.rejected >= 1);
-    assert.equal(metric.players, 8);
+    assert.equal(metric.players, 2);
   } finally {
     for (let ws of clients) ws.terminate();
     server.kill();

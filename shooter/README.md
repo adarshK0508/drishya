@@ -1,54 +1,67 @@
-# PARALLAX — your body, someone else's eyes
+# PARALLAX — Blackthorn House
 
-A LAN multiplayer arena built for Syntax Error. Inspired by the existing Unity prototype's exchanged camera feeds, PARALLAX exchanges camera ownership inside one authoritative world. The original Unity code remains at the repository root.
+Two players enter an old, dark mansion. One hunts through brief glimpses of the other's eyes. A local Node server owns movement, damage, ammunition, role assignment and round progression.
 
-## Run
-Requires Node 20+ (tested on 24.13).
-```sh
+## Start
+
+Node 20+ and a desktop browser with WebGL:
+
+```powershell
 npm install
 npm start
 ```
-Open http://localhost:3000. The server prints LAN addresses and a QR. Every laptop uses the **same server URL**, then the same four-letter room code. Phones display the desktop-required notice. Allow the server through the private-network firewall if needed.
 
-`npm run bots` fills a quick-match room with eight bots for ten minutes. For a human demo, join a room before starting bots; use the room capacity deliberately. Bots join the first available lobby. `PORT=...` is supported via environment variables.
+Default address: http://localhost:3000. The server prints a LAN address for the other laptop. Both players must use the **same server**, room code, and ready up. The first player is host and hunts first. Exactly two players are required; spectators are disabled.
 
-## Play
-Ready every player, then the host starts. WASD / mouse; Shift sprint; Space jump onto low platforms; Ctrl crouch; 1–4 pistol, SMG, shotgun, sniper; right-click sniper scope; R reload; G thrown grenade; F3 diagnostics. Escape releases mouse. Gamepad sticks, jump and triggers are also supported when the browser exposes a controller. White minimap dot is your body; lime indicates borrowed eyes.
+For another port in PowerShell:
 
-Rounds last exactly 60 seconds: **5 seconds own POV, then 15 seconds borrowed POV**, repeated three times. Own POV has a five-second countdown with beeps. During borrowed POV the countdown stays hidden for 12 seconds, then counts down the final three seconds with beeps. The final countdown announces the end of the round. A distinct sound marks each camera change. Solo players retain their own camera.
-
-Movement, aim, ammo and firing always belong to your original pilot. Simple world-space guns and muzzle sparks follow the actual shooter. When A sees through B's eyes, A's click flashes A's gun in the world, with no firing shake attached to B's camera. The camera wearer's own capsule is hidden to keep the view unobstructed; other living pilots remain rendered, including at close range. Deathmatch/team scores are tallied until time expires; LMS still eliminates without respawning but also runs to the timer. Host selects mode, one of two arenas and four themes. Spectators can cycle views.
-
-## Architecture
-```mermaid
-flowchart LR
- A[Input + client prediction] -->|28 byte input, 60 Hz| B[ws validation + input queues]
- B --> C[Fixed 60 Hz authority]
- C --> D[200 ms bounded hitbox history]
- C -->|20 Hz quantized deltas| E[Client reconciliation]
- E --> F[Adaptive interpolation + Three.js]
- C --> G[Rooms / host migration / 30 sec reconnect]
+```powershell
+$env:PORT = '3001'
+npm start
 ```
-`shared/game.mjs` holds movement, gun anchors and ray/AABB logic. `shared/protocol.mjs` is shared by browsers, server and bots. Snapshot entities are 28 bytes, including vertical velocity for correct jump reconciliation; per-client caches avoid unchanged records; full frames repair state once per second. The 80 m interest radius is checked around both body and camera, covering the entire current arena so pilots do not disappear at a distance threshold. Dynamic capsule and gun instances bypass stale aggregate frustum bounds. Server owns positions, ammo, fire cadence and damage. Rewind uses a client clock estimate clamped to 200 ms, never a client target claim. Shots originate at the shared gun muzzle; cover between body and muzzle blocks firing through a wall.
 
-Three.js 0.180.0 is vendored in `public/vendor`; ws and QR versions are pinned in package-lock. No runtime CDN or remote assets. Geometry, textures, music and effects are generated. Characters and sparks use instancing. Render pixel ratio is capped, with automatic downgrade below 45 FPS for two seconds. The low tier deliberately reduces resolution to keep software rendering responsive.
+## Controls
 
-## Verification
-```sh
+WASD move; mouse look; Shift sprint; Ctrl crouch; left click fire. Click the game to capture the mouse, then click to shoot. Escape releases it. F3 toggles diagnostics. Gamepads support sticks, left-stick press for sprint, A for crouching, and right trigger for shooting. Settings do not pause the online match.
+
+There is one revolver with six rounds per hunter per round. No reloads, other weapons, ammunition pickups, health pickups, or grenades. Each player has 100 health: body damage is 50, head damage is 100. The hider has no weapon. Crouching lowers both the camera and hitbox. Jumping is disabled in the mansion.
+
+## Three rounds
+
+| Round | Roles | Setup | Search |
+| --- | --- | --- | --- |
+| 1 | Host hunts, guest hides | 20 seconds hiding; hunter locked and blinded | 20s own POV + 7s hider POV, five cycles |
+| 2 | Guest hunts, host hides | Same setup and spawn positions with roles reversed | Same five cycles |
+| 3 | Both hunt | Five-second countdown at opposing room spawns | Same cycle, with reciprocal POV swaps; first kill wins |
+
+Five cycles take **135 seconds**, not 120. This follows the final requested cycle count and durations. Both players move during reveals; movement and firing always belong to the original body. The hider controls the direction of the live view. The camera owner's body is hidden, and their illumination travels with the view. Everyone's FOV is fixed at 75 degrees; visibility distance is limited by an 11m light and fog fading to black at 13m.
+
+A kill ends a round immediately. In rounds 1–2, timeout or the hunter using all six bullets without killing awards the hider a point. In round 3, timeout or both players exhausting their ammunition produces a draw. Five seconds separate rounds. All three rounds are played, even at 2–0. Most round wins takes the match; equal points give a match draw.
+
+A disconnect pauses the match for up to 30 seconds. Rejoining with the browser session token restores the same player and shifts the deadlines. Failure to return forfeits the match to the connected player. A rematch resets scores, ammo and roles and requires both players to ready up again.
+
+## Mansion and performance
+
+The mansion occupies 42 × 42 metres: Library, Study, Dining Room, Kitchen, Chapel and Bedroom, joined by a central hall and doors between adjacent rooms. Wardrobes, freestanding screens, bookcases, desks, counters, beds and pews provide cover. Walkable space behind tall furniture allows hiding and repositioning. Rugs, wall panels, clocks and patterned ceilings provide clues even when the hider avoids looking at a doorway.
+
+Geometry and textures are generated locally. Static boxes share geometry and are batched by material with instancing. Two human figures use faceted heads, coats, arms and animated legs. A single point light follows the current viewpoint. There are no expensive real-time shadows or external assets. Pixel ratio is capped and drops to 0.55 after sustained low FPS. The scene is approximately 5,200 triangles and 50 draw calls; actual FPS depends on the machine.
+
+## Implementation
+
+- `shared/mansion.mjs`: room layout, furniture and common collision boxes.
+- `shared/hunt.mjs`: timing, roles, movement and firing permissions.
+- `shared/game.mjs`: shared movement, crouching, ray tests and gun positions.
+- `server.mjs`: two-player admission, authoritative round states, damage, reconnect and snapshots.
+- `public/mansion.mjs`: generated architecture, surface patterns and human figures.
+- `public/client.mjs`: input prediction, camera borrowing, interpolation, HUD and audio.
+
+Existing 28-byte inputs and delta snapshots remain. Snapshots now include crouching in their flags. The server clamps lag compensation to 200ms, checks barrel cover and enforces the single weapon regardless of requested weapon index. Old arena geometry remains solely for legacy movement tests.
+
+## Verify
+
+```powershell
 npx playwright install chromium
 npm test
-npm run test:soak
 ```
-Browser runner prefers the workspace `.browsers` installation when present; see TEST_REPORT.md for actual environment and results. Test fixtures own their child servers and stop them in `finally` blocks. Soak runs ten minutes plus four network conditions. Raw results are under `test-results` after execution.
 
-## Deployment
-`docker build -t parallax . && docker run --rm -p 3000:3000 parallax`
-
-Render/Railway: deploy this directory as a Node service, `npm ci --omit=dev`, start `npm start`, enable WebSockets. Rooms are process-local: use a single replica or sticky room routing, not arbitrary load balancing. TLS is required for public hosting. Public adversarial deployment needs additional connection/IP admission controls and authentication.
-
-## Honest boundaries
-This is a hackathon game, not a hardened public competitive service. It has low platforms, thrown grenades, generated textures/audio, recoil, death cam, team totals, and sight-line-aware spawns. Missing production features include animated weapon models, bullet impact decals, reliable source authentication for lag-compensation timestamps, persistent accounts, and cross-process room routing. The input server validates movement, ammo, rate, damage and line of sight, but determined users on an unauthenticated LAN can still manipulate aim or identity. Render loops still allocate in some paths. The network harness measures transport and corrections; subjective playability requires human players. A finite soak does not prove leak freedom.
-
-![Main menu](docs/menu.png)
-![Arena](docs/arena.png)
-
+The browser check uses the repository's `.browsers` installation if present. It launches its own isolated server, inspects two browser clients, and accelerates round deadlines in the fixture. See `TEST_REPORT.md` for the current checks and limits. Earlier arena screenshots, soak scripts and POV regression harness are historical and do not validate the mansion rules.

@@ -1,23 +1,28 @@
-# PARALLAX — Syntax Error 2026
+# PARALLAX — Blackthorn House
 
-This repository contains **PARALLAX**, a LAN multiplayer shooter in [`shooter/`](shooter/). The original Unity shooter prototype remains at the repository root; its original instructions are preserved in [`UNITY_README.md`](UNITY_README.md).
+A two-player LAN horror game with live perspective borrowing. The active implementation is in `shooter/`; the original Unity prototype is preserved at the repository root.
 
-## Play PARALLAX
+## Play
 
-Requires Node.js 20+ and a desktop browser with WebGL. From the repository root:
-
-```sh
+```powershell
 cd shooter
 npm install
 npm start
 ```
 
-Open the printed URL. All players on a hotspot or private LAN use the same server URL and room code. The server prints LAN addresses and a QR code. Ready up, then the host starts. Full controls, architecture, Docker run command, screenshots, and evidence are in [`shooter/README.md`](shooter/README.md) and [`shooter/TEST_REPORT.md`](shooter/TEST_REPORT.md).
+Open the printed address on two desktop browsers. The second laptop uses the host laptop's LAN address, then the same room code. Both players ready up; the host starts. Node.js 20+ and WebGL are required.
 
-## Demo order
+The mansion has six rooms, real furniture cover, room-specific rugs and patterned ceilings, clocks, low-poly human figures, and a small sphere of illumination. See [game rules and controls](shooter/README.md).
 
-1. Open PARALLAX on two laptops. Show one world with cameras exchanged while each player still controls their own body.
-2. Show the body marker on the minimap, weapons and a second match mode.
-3. Use F3 diagnostics and the measured bot/browser evidence to explain the network design.
+## Revised rules
 
-The two-minute script is [`shooter/DEMO_SCRIPT.md`](shooter/DEMO_SCRIPT.md). No public host has been deployed; the current run path is local/LAN.
+- Round 1: host hunts, other player hides. Round 2 reverses the roles.
+- Each starts with 20 seconds for hiding while the hunter waits behind a blackout screen.
+- Search repeats 20 seconds of own POV and 7 seconds of live hider POV, five times. **That is 135 seconds of search**, plus hiding time.
+- Both players may move during reveals. Only the hunter borrows eyes; the hider retains their own view.
+- Hunters have one six-shot revolver. Hiders are unarmed. Two body shots or one headshot kills.
+- Survival or an empty hunter's gun wins the round for the hider.
+- Round 3 starts with a five-second countdown. Both players hunt and exchange POV. First kill wins the round; timeout or both empty guns is a draw.
+- All three rounds are played. Most round wins takes the match; equal scores produce a draw.
+
+Run `npm test` inside `shooter/` for the unit, server and two-browser checks. [Verification details](shooter/TEST_REPORT.md).

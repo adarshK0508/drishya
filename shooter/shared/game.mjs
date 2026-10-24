@@ -1,8 +1,9 @@
 // Shared deterministic movement and geometry: client inputs never contain positions.
+import { mansionColliders } from "./mansion.mjs";
 export const DT = 1 / 60,
   SIZE = 24;
 export const weapons = [
-  { name: "Pistol", rate: 320, damage: 27, ammo: 12, spread: 0.012 },
+  { name: "Revolver", rate: 650, damage: 50, ammo: 6, spread: 0.003 },
   { name: "SMG", rate: 95, damage: 12, ammo: 30, spread: 0.045 },
   { name: "Shotgun", rate: 850, damage: 13, ammo: 6, spread: 0.12, pellets: 7 },
   { name: "Sniper", rate: 1200, damage: 80, ammo: 5, spread: 0.002 },
@@ -27,6 +28,7 @@ export const maps = [
     [16, 15, 3, 3, 0.75],
   ],
 ];
+maps.push(mansionColliders);
 export const pickups = [
   [-17, 0, "health"],
   [17, 0, "health"],
@@ -35,8 +37,8 @@ export const pickups = [
 ];
 export function blocked(x, z, map = 0, r = 0.4, y = 0) {
   return (
-    Math.abs(x) > SIZE - r ||
-    Math.abs(z) > SIZE - r ||
+    Math.abs(x) > (map === 2 ? 21 : SIZE) - r ||
+    Math.abs(z) > (map === 2 ? 21 : SIZE) - r ||
     maps[map].some(
       ([a, b, w, d, h]) =>
         y < h - 0.08 && Math.abs(x - a) < w + r && Math.abs(z - b) < d + r,
@@ -47,7 +49,16 @@ export function move(p, i, dt = DT, map = 0) {
   let x = (i.keys & 8 ? 1 : 0) - (i.keys & 4 ? 1 : 0),
     z = (i.keys & 2 ? 1 : 0) - (i.keys & 1 ? 1 : 0);
   let l = Math.hypot(x, z) || 1,
-    s = i.keys & 32 ? 2.5 : i.keys & 16 ? 8 : 5.4;
+    s =
+      i.keys & 32
+        ? 2.1
+        : i.keys & 16
+          ? map === 2
+            ? 5.8
+            : 8
+          : map === 2
+            ? 3.8
+            : 5.4;
   let dx = ((x * Math.cos(i.yaw) + z * Math.sin(i.yaw)) / l) * s * dt,
     dz = ((-x * Math.sin(i.yaw) + z * Math.cos(i.yaw)) / l) * s * dt;
   if (!blocked(p.x + dx, p.z, map, 0.4, p.y)) p.x += dx;
@@ -61,7 +72,7 @@ export function move(p, i, dt = DT, map = 0) {
         : height,
     0,
   );
-  if (i.keys & 64 && p.y <= support + 0.001) {
+  if (map !== 2 && i.keys & 64 && p.y <= support + 0.001) {
     p.vy = 6;
   }
   p.vy = (p.vy || 0) - 18 * dt;
@@ -70,6 +81,7 @@ export function move(p, i, dt = DT, map = 0) {
   p.yaw = i.yaw;
   p.pitch = i.pitch;
   p.fov = i.fov;
+  p.crouched = !!(i.keys & 32);
 }
 // Shared gun geometry anchor: world-space barrel tip (or body center).
 export function gunPosition(p, distance = 0.72) {
@@ -77,7 +89,7 @@ export function gunPosition(p, distance = 0.72) {
     pitch = p.pitch || 0;
   return {
     x: p.x + Math.cos(yaw) * 0.24 - Math.sin(yaw) * Math.cos(pitch) * distance,
-    y: p.y + 1.35 + Math.sin(pitch) * distance,
+    y: p.y + (p.crouched ? 0.8 : 1.35) + Math.sin(pitch) * distance,
     z: p.z - Math.sin(yaw) * 0.24 - Math.cos(yaw) * Math.cos(pitch) * distance,
   };
 }
@@ -157,11 +169,14 @@ export function hit(origin, yaw, pitch, players, map = 0) {
       dy,
       dz,
       [p.x - 0.4, p.y, p.z - 0.4],
-      [p.x + 0.4, p.y + 1.8, p.z + 0.4],
+      [p.x + 0.4, p.y + (p.crouched ? 1.15 : 1.8), p.z + 0.4],
     );
     if (t < best) {
       best = t;
-      result = { id: p.id, head: origin.y + 1.5 + dy * t > p.y + 1.35 };
+      result = {
+        id: p.id,
+        head: origin.y + 1.5 + dy * t > p.y + (p.crouched ? 0.85 : 1.35),
+      };
     }
   }
   return result;

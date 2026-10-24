@@ -19,7 +19,15 @@ import {
   gunPosition,
 } from "./shared/game.mjs";
 import { readInput, snapshot, signature } from "./shared/protocol.mjs";
-import { teamScores, perspectivePhase } from "./shared/match.mjs";
+import {
+  RULES,
+  SEARCH_MS,
+  huntPhase,
+  roleFor,
+  mayMove,
+  mayFire,
+} from "./shared/hunt.mjs";
+import { mansionSpawns } from "./shared/mansion.mjs";
 const root = path.dirname(fileURLToPath(import.meta.url));
 export const rooms = new Map();
 let nextId = 1,
@@ -109,66 +117,128 @@ function roster(r) {
     host: r.host,
     settings: r.settings,
     state: r.state,
+    stage: r.stage,
+    round: r.round || 0,
     end: r.end,
     swapAt: r.swapAt,
     borrowed: !!r.borrowed,
-    players: [...r.players.values()].map(
-      ({ id, name, ready, spectator, team }) => ({
-        id,
-        name,
-        ready,
-        spectator,
-        team,
-      }),
-    ),
+    cycle: r.cycle || 1,
+    stageEnd: r.stageEnd,
+    paused: !!r.pausedAt,
+    pausedAt: r.pausedAt || 0,
+    results: r.results || [],
+    players: [...r.players.values()].map((p) => ({
+      id: p.id,
+      name: p.name,
+      ready: p.ready,
+      spectator: p.spectator,
+      team: p.team,
+      role: p.role,
+      points: p.points || 0,
+      connected: !!p.ws,
+    })),
   });
 }
-function spawn(r, p) {
-  let spots = [
-    [-20, -20],
-    [20, 20],
-    [-20, 20],
-    [20, -20],
-    [-18, 12],
-    [18, -12],
-  ];
-  [p.x, p.z] = spawnChoice(
-    spots,
-    [...r.players.values()].filter(
-      (q) => q.id !== p.id && q.hp > 0 && !q.spectator,
-    ),
-    r.settings.map,
-  );
-  p.y = 0;
-  p.vy = 0;
-  p.hp = 100;
-  p.ammo = weapons.map((w) => w.ammo);
-  p.reloadAt = 0;
-  p.grenades = 2;
-  p.view = p.id;
+function spawn(r, p, index = 0) {
+  const spot =
+    r.round === 3
+      ? mansionSpawns.duel[index % 2]
+      : mansionSpawns[p.role] || mansionSpawns.hunter;
+  [p.x, p.z] = spot;
+  Object.assign(p, {
+    y: 0,
+    vy: 0,
+    hp: 100,
+    yaw: p.z > 0 ? 0 : Math.PI,
+    pitch: 0,
+    fov: 75,
+    weapon: 0,
+    ammo: [p.role === "hunter" ? RULES.ammo : 0, 0, 0, 0],
+    reloadAt: 0,
+    grenades: 0,
+    view: p.id,
+    keys: 0,
+    crouched: false,
+    inputAt: 0,
+    queue: [],
+    lastFire: 0,
+  });
+  p.seq = p.lastSeq;
+  p.cache.clear();
+}
+function beginRound(r, now) {
+  r.round++;
+  r.stage = r.round === 3 ? "countdown" : "hide";
+  r.stageEnd = now + (r.round === 3 ? 5000 : RULES.hide);
+  r.startedAt = r.stageEnd;
+  r.end = r.startedAt + SEARCH_MS;
+  r.borrowed = false;
+  r.cycle = 1;
+  r.swapAt = r.startedAt + RULES.own;
+  r.history = [];
+  [...r.players.values()].forEach((p, i) => {
+    p.role = roleFor(r.round, i);
+    spawn(r, p, i);
+  });
+  roster(r);
 }
 function doSwap(r) {
-  let ids = [...r.players.values()]
-    .filter((p) => !p.spectator && p.hp > 0)
-    .map((p) => p.id);
-  for (let [id, view] of swap(ids, "rotation"))
-    r.players.get(id).view = r.borrowed ? view : id;
+  const alive = [...r.players.values()].filter((p) => p.hp > 0);
+  for (const p of alive)
+    p.view =
+      r.stage === "search" && r.borrowed && p.role === "hunter"
+        ? alive.find((q) => q.id !== p.id)?.id || p.id
+        : p.id;
 }
-function finish(r) {
+function finish(r, reason, forfeitWinner) {
   if (r.state !== "playing") return;
   r.state = "ended";
+  r.stage = "ended";
+  const scores = [...r.players.values()]
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      points: p.points || 0,
+      kills: p.kills,
+      deaths: p.deaths,
+    }))
+    .sort((a, b) => b.points - a.points);
+  const winner =
+    forfeitWinner ||
+    (scores[0]?.points > scores[1]?.points ? scores[0].id : null);
   emit(r, {
     type: "ended",
-    scores: [...r.players.values()]
-      .map((p) => ({
-        name: p.name,
-        kills: p.kills,
-        deaths: p.deaths,
-        team: p.team,
-        spectator: p.spectator,
-      }))
-      .sort((a, b) => b.kills - a.kills),
-    teams: teamScores(r.players.values()),
+    scores,
+    winner,
+    reason: reason || "Three rounds complete",
+    rounds: r.results,
+  });
+  for (const p of r.players.values()) p.ready = false;
+  roster(r);
+}
+function endRound(r, winner, reason, now) {
+  if (r.stage !== "search") return;
+  if (winner) winner.points++;
+  r.results.push({
+    round: r.round,
+    winner: winner?.id || null,
+    name: winner?.name || "Draw",
+    reason,
+  });
+  r.stage = "intermission";
+  r.stageEnd = now + RULES.intermission;
+  r.borrowed = false;
+  for (const p of r.players.values()) {
+    p.view = p.id;
+    p.keys = 0;
+    p.queue = [];
+  }
+  emit(r, {
+    type: "roundResult",
+    round: r.round,
+    winner: winner?.id || null,
+    name: winner?.name || "Draw",
+    reason,
   });
   roster(r);
 }
@@ -238,7 +308,7 @@ wss.on("connection", (ws, req) => {
         r = code
           ? rooms.get(code)
           : [...rooms.values()].find(
-              (q) => q.players.size < 8 && q.state === "lobby",
+              (q) => q.players.size < 2 && q.state !== "playing",
             );
         if (code && !r) {
           send(ws, { type: "error", message: "Room not found" });
@@ -255,12 +325,12 @@ wss.on("connection", (ws, req) => {
             players: new Map(),
             host: 0,
             settings: {
-              mode: "swap",
+              mode: "hunt",
               variant: "rotation",
-              map: 0,
+              map: 2,
               theme: 0,
               limit: 20,
-              duration: 60,
+              duration: SEARCH_MS / 1000,
             },
             state: "lobby",
             history: [],
@@ -272,8 +342,16 @@ wss.on("connection", (ws, req) => {
           };
           rooms.set(code, r);
         }
-        if (r.players.size >= 8) {
-          send(ws, { type: "error", message: "Room full (8 players)" });
+        if (r.players.size >= 2) {
+          send(ws, { type: "error", message: "Room full (2 players)" });
+          return;
+        }
+        if (m.spectator || r.state === "playing") {
+          send(ws, {
+            type: "error",
+            message:
+              "This game requires exactly two players; observers are disabled",
+          });
           return;
         }
         let name =
@@ -288,7 +366,9 @@ wss.on("connection", (ws, req) => {
           token: randomBytes(24).toString("hex"),
           ws,
           ready: false,
-          spectator: !!m.spectator,
+          spectator: false,
+          role: "hider",
+          points: 0,
           x: 0,
           y: 0,
           z: 0,
@@ -338,36 +418,23 @@ wss.on("connection", (ws, req) => {
         p.ready = true;
         roster(r);
       }
-      if (m.type === "settings" && r.host === p.id && r.state !== "playing") {
-        let s = m.settings || {};
-        if (["swap", "team", "lms"].includes(s.mode)) r.settings.mode = s.mode;
-        if ([0, 1].includes(s.map)) r.settings.map = s.map;
-        if ([0, 1, 2, 3].includes(s.theme)) r.settings.theme = s.theme;
-        roster(r);
-      }
       if (m.type === "start" && r.host === p.id && r.state !== "playing") {
         if (
-          [...r.players.values()].some((q) => q.ws && !q.spectator && !q.ready)
+          r.players.size !== 2 ||
+          [...r.players.values()].some((q) => !q.ws || !q.ready)
         ) {
-          send(ws, { type: "error", message: "All pilots must ready up" });
+          send(ws, {
+            type: "error",
+            message: "Exactly two connected players must ready up",
+          });
           return;
         }
         r.state = "playing";
-        r.startedAt = now;
-        r.end = now + 60000;
-        r.borrowed = false;
-        r.swapAt = now + 5000;
-        r.history = [];
-        r.grenades = [];
-        for (let q of r.players.values()) {
-          spawn(r, q);
-          q.kills = q.deaths = 0;
-          q.cache.clear();
-        }
-        const first = [...r.players.values()].find((q) => !q.spectator);
-        for (let q of r.players.values())
-          if (q.spectator) q.view = first?.id || q.id;
-        roster(r);
+        r.round = 0;
+        r.results = [];
+        r.pausedAt = 0;
+        for (const q of r.players.values()) q.points = q.kills = q.deaths = 0;
+        beginRound(r, now);
       }
     } catch {
       metrics.rejected++;
@@ -385,9 +452,8 @@ wss.on("connection", (ws, req) => {
     roster(r);
   });
 });
-function step() {
-  let begin = performance.now(),
-    now = Date.now();
+export function step(now = Date.now()) {
+  let begin = performance.now();
   tick++;
   for (let [code, r] of rooms) {
     for (let [id, p] of r.players)
@@ -400,222 +466,184 @@ function step() {
       continue;
     }
     if (r.state === "playing") {
-      if (now >= r.end) {
-        finish(r);
-        continue;
-      }
-      const phase = perspectivePhase(r.startedAt, now);
-      if (phase.borrowed !== r.borrowed || phase.endsAt !== r.swapAt) {
-        r.borrowed = phase.borrowed;
-        r.swapAt = phase.endsAt;
-        emit(r, { type: "swap", swapAt: r.swapAt, borrowed: r.borrowed });
-      }
-      // Rebuild assignments after deaths, respawns and disconnects as well.
-      doSwap(r);
-      for (let n = r.grenades.length - 1; n >= 0; n--) {
-        const g = r.grenades[n];
-        g.x += g.vx / 60;
-        g.y += g.vy / 60;
-        g.z += g.vz / 60;
-        g.vy -= 18 / 60;
-        const collision =
-          g.y <= 0 ||
-          Math.abs(g.x) >= 24 ||
-          Math.abs(g.z) >= 24 ||
-          maps[r.settings.map].some(
-            ([x, z, w, d, h]) =>
-              Math.abs(g.x - x) < w && Math.abs(g.z - z) < d && g.y < h,
+      const disconnected = [...r.players.values()].find((p) => !p.ws);
+      if (r.players.size < 2 || disconnected) {
+        if (!r.pausedAt) {
+          r.pausedAt = now;
+          roster(r);
+        }
+        if (r.players.size < 2 || now - r.pausedAt >= 30000) {
+          finish(
+            r,
+            "Opponent disconnected",
+            [...r.players.values()].find((p) => p.ws)?.id,
           );
-        if (!collision && now < g.end) continue;
-        r.grenades.splice(n, 1);
-        emit(r, { type: "blast", x: g.x, y: Math.max(0, g.y), z: g.z });
-        const owner = r.players.get(g.owner);
-        for (const q of r.players.values()) {
-          const range = Math.hypot(q.x - g.x, q.z - g.z);
-          if (
-            q.id === g.owner ||
-            q.spectator ||
-            q.hp <= 0 ||
-            range >= 5 ||
-            (r.settings.mode === "team" && owner?.team === q.team) ||
-            !visible(
-              { x: g.x, y: Math.max(0, g.y) - 1.3, z: g.z },
-              q,
-              r.settings.map,
-            )
-          )
-            continue;
-          const damage = Math.round(75 * (1 - range / 5));
-          q.hp = Math.max(0, q.hp - damage);
-          if (owner) send(owner.ws, { type: "hit", damage, head: false });
-          if (!q.hp && owner) {
-            q.deaths++;
-            q.died = now;
-            q.view = owner.id;
-            owner.kills++;
-            emit(r, {
-              type: "kill",
-              text: `${owner.name} → ${q.name} · GRENADE`,
-            });
+        }
+      } else {
+        if (r.pausedAt) {
+          const pause = now - r.pausedAt;
+          r.startedAt += pause;
+          r.end += pause;
+          r.swapAt += pause;
+          r.stageEnd += pause;
+          r.pausedAt = 0;
+          r.history = [];
+          for (const p of r.players.values()) {
+            p.queue = [];
+            p.keys = 0;
+            p.inputAt = 0;
+          }
+          roster(r);
+        }
+        if (r.stage === "intermission" && now >= r.stageEnd) {
+          if (r.round >= 3) finish(r);
+          else beginRound(r, now);
+        }
+        if (
+          (r.stage === "hide" || r.stage === "countdown") &&
+          now >= r.stageEnd
+        ) {
+          r.stage = "search";
+          for (const p of r.players.values()) {
+            p.queue = [];
+            p.keys = 0;
+            p.inputAt = 0;
+          }
+          roster(r);
+        }
+        if (r.stage === "search") {
+          if (now >= r.end)
+            endRound(
+              r,
+              r.round < 3
+                ? [...r.players.values()].find((p) => p.role === "hider")
+                : null,
+              r.round < 3
+                ? "Survived the hunt"
+                : "Neither hunter secured a kill",
+              now,
+            );
+          else {
+            const phase = huntPhase(r.startedAt, now);
+            if (phase.borrowed !== r.borrowed || phase.endsAt !== r.swapAt) {
+              r.borrowed = phase.borrowed;
+              r.swapAt = phase.endsAt;
+              r.cycle = phase.cycle;
+              emit(r, {
+                type: "swap",
+                swapAt: r.swapAt,
+                borrowed: r.borrowed,
+                cycle: r.cycle,
+              });
+            }
           }
         }
-      }
-      for (let p of r.players.values()) {
-        if (p.spectator) continue;
-        if (p.hp <= 0) {
-          if (r.settings.mode !== "lms" && now - p.died > 3000) spawn(r, p);
-          continue;
-        }
-        let i = p.queue.shift();
-        if (i) {
-          p.seq = i.seq;
-          p.keys = i.keys;
-          p.inputAt = now;
-          p.weapon = i.weapon;
-          move(p, i, 1 / 60, r.settings.map);
-          if (i.reload && !p.reloadAt) p.reloadAt = now + 1400;
-          if (p.reloadAt && now >= p.reloadAt) {
-            p.ammo[p.weapon] = weapons[p.weapon].ammo;
-            p.reloadAt = 0;
-          }
-          if (i.fire && !p.reloadAt) {
-            let w = weapons[p.weapon];
-            if (now - p.lastFire >= w.rate && p.ammo[p.weapon] > 0) {
+        doSwap(r);
+        for (const p of r.players.values()) {
+          let i = p.queue.shift();
+          if (i) {
+            p.seq = i.seq;
+            p.inputAt = now;
+            p.weapon = 0;
+            // View assignment never changes whose body this input moves or fires.
+            if (mayMove(r, p)) {
+              p.keys = i.keys;
+              move(p, { ...i, fov: 75 }, 1 / 60, 2);
+            } else p.keys = 0;
+            if (
+              i.fire &&
+              mayFire(r, p) &&
+              now - p.lastFire >= weapons[0].rate &&
+              p.ammo[0] > 0
+            ) {
+              const w = weapons[0];
               p.lastFire = now;
-              p.ammo[p.weapon]--;
+              p.ammo[0]--;
               metrics.shots++;
-              let rewind = Math.max(now - 200, Math.min(now, i.time - 100));
-              let past = r.history.findLast((h) => h.time <= rewind)
+              const rewind = Math.max(now - 200, Math.min(now, i.time - 100));
+              const past = r.history.findLast((h) => h.time <= rewind)
                 ?.players || [...r.players.values()];
               const muzzle = gunPosition(p);
-              const gunOrigin = {
+              const origin = {
                 ...p,
                 x: muzzle.x,
                 y: muzzle.y - 1.5,
                 z: muzzle.z,
               };
-              const clearBarrel = visible(p, gunOrigin, r.settings.map);
-              for (let n = 0; n < (w.pellets || 1); n++) {
-                let h =
-                  clearBarrel &&
-                  hit(
-                    gunOrigin,
-                    i.yaw + (Math.random() - 0.5) * w.spread,
-                    i.pitch + (Math.random() - 0.5) * w.spread,
-                    past,
-                    r.settings.map,
-                  );
-                if (h) {
-                  let q = r.players.get(h.id);
-                  if (
-                    q &&
-                    q.hp > 0 &&
-                    (r.settings.mode !== "team" || q.team !== p.team)
-                  ) {
-                    metrics.hits++;
-                    let damage = w.damage * (h.head ? 2 : 1);
-                    q.hp = Math.max(0, q.hp - damage);
-                    send(p.ws, {
-                      type: "hit",
-                      damage,
-                      head: h.head,
-                      inputTime: i.time,
-                    });
-                    if (!q.hp) {
-                      q.deaths++;
-                      q.died = now;
-                      q.view = p.id;
-                      p.kills++;
-                      emit(r, {
-                        type: "kill",
-                        text: `${p.name} → ${q.name}${h.head ? " · HEADSHOT" : ""}`,
-                      });
-                    }
-                  }
-                }
-              }
+              // Check barrel clearance from the actual eye height, including crouching.
+              const eye = { ...p, y: p.y + (p.crouched ? -0.55 : 0) };
+              const h =
+                visible(eye, origin, 2) && hit(origin, p.yaw, p.pitch, past, 2);
               emit(r, {
                 type: "shot",
                 id: p.id,
-                weapon: p.weapon,
+                weapon: 0,
                 x: p.x,
                 y: p.y,
                 z: p.z,
-                yaw: i.yaw,
-                pitch: i.pitch,
+                yaw: p.yaw,
+                pitch: p.pitch,
+                crouched: p.crouched,
               });
+              if (h) {
+                const q = r.players.get(h.id);
+                if (q?.hp > 0) {
+                  const damage = w.damage * (h.head ? 2 : 1);
+                  q.hp = Math.max(0, q.hp - damage);
+                  metrics.hits++;
+                  send(p.ws, {
+                    type: "hit",
+                    damage,
+                    head: h.head,
+                    inputTime: i.time,
+                  });
+                  if (!q.hp) {
+                    p.kills++;
+                    q.deaths++;
+                    endRound(r, p, "Caught in the dark", now);
+                  }
+                }
+              }
             }
+          } else if (mayMove(r, p) && now - (p.inputAt || 0) < 150) {
+            move(
+              p,
+              { keys: p.keys, yaw: p.yaw, pitch: p.pitch, fov: 75 },
+              1 / 60,
+              2,
+            );
           }
-          if (
-            i.grenade &&
-            p.grenades > 0 &&
-            now - (p.lastGrenade || 0) > 1500
-          ) {
-            p.grenades--;
-            p.lastGrenade = now;
-            const speed = 12,
-              horiz = Math.cos(i.pitch);
-            const g = {
-              owner: p.id,
-              x: p.x,
-              y: p.y + 1.45,
-              z: p.z,
-              vx: -Math.sin(i.yaw) * horiz * speed,
-              vy: Math.sin(i.pitch) * speed + 3,
-              vz: -Math.cos(i.yaw) * horiz * speed,
-              end: now + 2000,
-            };
-            r.grenades.push(g);
-            emit(r, {
-              type: "grenade",
-              x: g.x,
-              y: g.y,
-              z: g.z,
-              vx: g.vx,
-              vy: g.vy,
-              vz: g.vz,
-            });
-          }
-        } else if (now - (p.inputAt || 0) < 150) {
-          move(
-            p,
-            { keys: p.keys, yaw: p.yaw, pitch: p.pitch, fov: p.fov },
-            1 / 60,
-            r.settings.map,
-          );
         }
-        for (let [x, z, type] of pickups)
-          if (
-            Math.hypot(p.x - x, p.z - z) < 1.2 &&
-            now - (p.pickupAt || 0) > 5000
-          ) {
-            p.pickupAt = now;
-            if (type === "health") p.hp = Math.min(100, p.hp + 35);
-            else p.ammo[p.weapon] = weapons[p.weapon].ammo;
-          }
+        if (r.stage === "search") {
+          const armed = [...r.players.values()].filter(
+            (p) => p.role === "hunter",
+          );
+          if (armed.every((p) => p.ammo[0] === 0))
+            endRound(
+              r,
+              r.round < 3
+                ? [...r.players.values()].find((p) => p.role === "hider")
+                : null,
+              r.round < 3
+                ? "Hunter ran out of ammunition"
+                : "Both hunters ran out of ammunition",
+              now,
+            );
+        }
+        doSwap(r);
+        r.history.push({
+          time: now,
+          players: [...r.players.values()].map((p) => ({
+            id: p.id,
+            x: p.x,
+            y: p.y,
+            z: p.z,
+            hp: p.hp,
+            crouched: p.crouched,
+          })),
+        });
+        if (r.history.length > 15) r.history.shift();
       }
-      doSwap(r);
-      for (const spectator of r.players.values())
-        if (
-          spectator.spectator &&
-          (!r.players.get(spectator.view) ||
-            r.players.get(spectator.view).hp <= 0)
-        )
-          spectator.view =
-            [...r.players.values()].find((q) => !q.spectator && q.hp > 0)?.id ||
-            spectator.id;
-      r.history.push({
-        time: now,
-        players: [...r.players.values()].map((p) => ({
-          id: p.id,
-          x: p.x,
-          y: p.y,
-          z: p.z,
-          hp: p.hp,
-          spectator: p.spectator,
-        })),
-      });
-      if (r.history.length > 15) r.history.shift();
     }
     if (tick % 3 === 0) {
       for (let p of r.players.values()) {
@@ -662,47 +690,54 @@ function step() {
 // Deadline accumulator keeps simulation steps fixed even when timer callbacks jitter.
 let last = performance.now(),
   acc = 0;
-const timer = setInterval(() => {
-  let now = performance.now();
-  acc += Math.min(100, now - last);
-  last = now;
-  while (acc >= 1000 / 60) {
-    step();
-    acc -= 1000 / 60;
+let timer;
+export { server, wss };
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  timer = setInterval(() => {
+    let now = performance.now();
+    acc += Math.min(100, now - last);
+    last = now;
+    while (acc >= 1000 / 60) {
+      step();
+      acc -= 1000 / 60;
+    }
+  }, 4);
+  const port = Number(process.env.PORT || 3000);
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`PARALLAX http://localhost:${port}`);
+    for (let list of Object.values(os.networkInterfaces()))
+      for (let n of list || [])
+        if (n.family === "IPv4" && !n.internal) {
+          let url = `http://${n.address}:${port}`;
+          console.log("LAN " + url);
+          qr.generate(url, { small: true });
+        }
+  });
+  function close() {
+    clearInterval(timer);
+    for (let ws of wss.clients) ws.terminate();
+    server.close(() => process.exit());
   }
-}, 4);
-const port = Number(process.env.PORT || 3000);
-server.listen(port, "0.0.0.0", () => {
-  console.log(`PARALLAX http://localhost:${port}`);
-  for (let list of Object.values(os.networkInterfaces()))
-    for (let n of list || [])
-      if (n.family === "IPv4" && !n.internal) {
-        let url = `http://${n.address}:${port}`;
-        console.log("LAN " + url);
-        qr.generate(url, { small: true });
-      }
-});
-function close() {
-  clearInterval(timer);
-  for (let ws of wss.clients) ws.terminate();
-  server.close(() => process.exit());
+  process.on("SIGTERM", close);
+  process.on("SIGINT", close);
+  process.on("uncaughtException", (error) => {
+    console.error("Fatal server error:", error);
+    close();
+  });
+  process.on("unhandledRejection", (error) => {
+    console.error("Unhandled server rejection:", error);
+    close();
+  });
+  server.on("error", (error) => {
+    console.error("Server listener error:", error.message);
+    clearInterval(timer);
+    process.exit(1);
+  });
+  wss.on("error", (error) => {
+    console.error("WebSocket listener error:", error.message);
+    close();
+  });
 }
-process.on("SIGTERM", close);
-process.on("SIGINT", close);
-process.on("uncaughtException", (error) => {
-  console.error("Fatal server error:", error);
-  close();
-});
-process.on("unhandledRejection", (error) => {
-  console.error("Unhandled server rejection:", error);
-  close();
-});
-server.on("error", (error) => {
-  console.error("Server listener error:", error.message);
-  clearInterval(timer);
-  process.exit(1);
-});
-wss.on("error", (error) => {
-  console.error("WebSocket listener error:", error.message);
-  close();
-});

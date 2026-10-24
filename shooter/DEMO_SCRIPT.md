@@ -1,10 +1,12 @@
-# Two-minute demo
+# Two-minute Blackthorn House demo
 
-- 0:00–0:15: “What if an FPS took away the one thing you trust: your own eyes?” Show PARALLAX menu. Explain that this retains the Unity prototype's camera-sharing idea.
-- 0:15–0:35: Two laptops, one server URL, matching four-letter room. Ready both, host starts. Point to real-body minimap marker.
-- 0:35–1:00: Walk in opposite directions. Watch the countdown and exchange perspectives. Inputs still move your original body. Show that the partner sees your actions from elsewhere.
-- 1:00–1:20: Swap weapons, scope sniper, reload, pick up health, and throw a grenade; show hitmarker and killfeed.
-- 1:20–1:40: F3 diagnostics. Explain 60 Hz authority, 20 Hz binary deltas, client prediction and 200 ms bounded rewind. Show the measured test report.
-- 1:40–2:00: Switch palette/map in next lobby. Close: “The mechanic is shared perception, not video streaming. One world, different eyes.”
+1. 0:00–0:20 — Show the mansion menu. Explain: one hunter, one unarmed hider, then roles reverse; the last round arms both.
+2. 0:20–0:40 — Join the same room on two laptops. Ready both and start. Show the hunter's blackout while the hider chooses furniture cover.
+3. 0:40–1:00 — Hunter enters the hall. Point out the small sphere of light and six-shot ammunition display. The hider faces a distinctive rug or clock.
+4. 1:00–1:07 — The first reveal arrives 40 seconds after match start. Show the hunter seeing through the hider while their movement still controls their original body. Hider keeps their own camera.
+5. 1:07–1:30 — Hunter follows the clue. A body shot deals 50 damage; a headshot kills. Alternatively demonstrate the hider surviving when the hunter wastes all six shots.
+6. 1:30–2:00 — Show the round result and role reversal. Explain that all three rounds play, most round wins decides the match, and the final round is first kill. F3 shows rendering and network statistics.
 
-Before judges: private hotspot; same URL on both laptops; audio enabled with user click; no campus client isolation; browser mouse capture; stop bots to free room capacity.
+The complete match can exceed seven minutes. This script demonstrates the opening and explains later rounds; it does not claim to finish a full match in two minutes.
+
+Use one server URL on both laptops. The second laptop uses the printed LAN address, not its own localhost. Both browsers need a mouse and keyboard; Escape releases mouse capture. Current timing is 20 seconds hiding plus 135 seconds searching in each of the first two rounds.

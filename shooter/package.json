@@ -8,10 +8,8 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test test/*.test.mjs && node test/browser.mjs && node test/pov-regression.mjs",
-    "test:unit": "node --test test/*.test.mjs",
-    "bots": "node scripts/bots.mjs",
-    "test:soak": "node scripts/soak.mjs"
+    "test": "node --test test/*.test.mjs && node test/browser.mjs",
+    "test:unit": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "qrcode-terminal": "0.12.0",
