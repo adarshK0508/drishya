@@ -20,3 +20,8 @@ Recordings/
 *.opendb
 *.VC.db
 *.tmp
+
+node_modules/
+*.sqlite*
+test-results/
+.browsers/
