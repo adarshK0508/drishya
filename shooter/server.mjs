@@ -13,8 +13,13 @@ import {
   validInput,
   weapons,
   pickups,
+  maps,
+  spawnChoice,
+  visible,
+  gunPosition,
 } from "./shared/game.mjs";
 import { readInput, snapshot, signature } from "./shared/protocol.mjs";
+import { teamScores, perspectivePhase } from "./shared/match.mjs";
 const root = path.dirname(fileURLToPath(import.meta.url));
 export const rooms = new Map();
 let nextId = 1,
@@ -29,50 +34,66 @@ const metrics = {
   rejected: 0,
 };
 const server = http.createServer((req, res) => {
-  let u = new URL(req.url, "http://local");
-  if (u.pathname === "/metrics") {
-    res.setHeader("Content-Type", "application/json");
-    return res.end(
-      JSON.stringify({
-        ...metrics,
-        avgTickMs: metrics.totalTickMs / Math.max(1, metrics.ticks),
-        rss: process.memoryUsage().rss,
-        heap: process.memoryUsage().heapUsed,
-        rooms: rooms.size,
-        players: [...rooms.values()].reduce((n, r) => n + r.players.size, 0),
-      }),
-    );
-  }
-  let name = u.pathname === "/" ? "/index.html" : u.pathname;
-  let base = name.startsWith("/shared/") ? root : path.join(root, "public");
-  let file = path.resolve(base, "." + name);
-  if (!file.startsWith(base + path.sep)) {
-    res.writeHead(403);
-    return res.end();
-  }
-  fs.readFile(file, (e, data) => {
-    if (e) {
-      res.writeHead(404);
-      return res.end("Not found");
+  try {
+    let u = new URL(req.url, "http://local");
+    if (u.pathname === "/metrics") {
+      res.setHeader("Content-Type", "application/json");
+      return res.end(
+        JSON.stringify({
+          ...metrics,
+          avgTickMs:
+            metrics.totalTickMs /
+            Math.max(1, metrics.ticks - (metrics.excludedTicks || 0)),
+          rss: process.memoryUsage().rss,
+          heap: process.memoryUsage().heapUsed,
+          rooms: rooms.size,
+          players: [...rooms.values()].reduce((n, r) => n + r.players.size, 0),
+        }),
+      );
     }
-    res.setHeader(
-      "Content-Type",
-      {
-        ".html": "text/html",
-        ".js": "text/javascript",
-        ".mjs": "text/javascript",
-        ".css": "text/css",
-        ".png": "image/png",
-      }[path.extname(file)] || "application/octet-stream",
-    );
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.end(data);
-  });
+    let name = u.pathname === "/" ? "/index.html" : u.pathname;
+    let base = name.startsWith("/shared/") ? root : path.join(root, "public");
+    let file = path.resolve(base, "." + name);
+    if (!file.startsWith(base + path.sep)) {
+      res.writeHead(403);
+      return res.end();
+    }
+    fs.readFile(file, (e, data) => {
+      if (e) {
+        res.writeHead(404);
+        return res.end("Not found");
+      }
+      res.setHeader(
+        "Content-Type",
+        {
+          ".html": "text/html",
+          ".js": "text/javascript",
+          ".mjs": "text/javascript",
+          ".css": "text/css",
+          ".png": "image/png",
+        }[path.extname(file)] || "application/octet-stream",
+      );
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.end(data);
+    });
+  } catch {
+    res.writeHead(400);
+    res.end("Bad request");
+  }
 });
 const wss = new WebSocketServer({
   server,
   maxPayload: 2048,
   perMessageDeflate: false,
+  verifyClient(info, done) {
+    if (wss.clients.size >= 128) return done(false, 503, "Capacity reached");
+    if (!info.origin) return done(true);
+    try {
+      return done(new URL(info.origin).host === info.req.headers.host);
+    } catch {
+      return done(false, 403, "Origin rejected");
+    }
+  },
 });
 function send(ws, data) {
   if (ws?.readyState === 1 && ws.bufferedAmount < 65536)
@@ -90,6 +111,7 @@ function roster(r) {
     state: r.state,
     end: r.end,
     swapAt: r.swapAt,
+    borrowed: !!r.borrowed,
     players: [...r.players.values()].map(
       ({ id, name, ready, spectator, team }) => ({
         id,
@@ -110,45 +132,43 @@ function spawn(r, p) {
     [-18, 12],
     [18, -12],
   ];
-  spots.sort(
-    (a, b) =>
-      Math.min(
-        ...[...r.players.values()]
-          .filter((q) => q.id !== p.id && q.hp > 0)
-          .map((q) => Math.hypot(q.x - b[0], q.z - b[1])),
-        99,
-      ) -
-      Math.min(
-        ...[...r.players.values()]
-          .filter((q) => q.id !== p.id && q.hp > 0)
-          .map((q) => Math.hypot(q.x - a[0], q.z - a[1])),
-        99,
-      ),
+  [p.x, p.z] = spawnChoice(
+    spots,
+    [...r.players.values()].filter(
+      (q) => q.id !== p.id && q.hp > 0 && !q.spectator,
+    ),
+    r.settings.map,
   );
-  [p.x, p.z] = spots[0];
   p.y = 0;
   p.vy = 0;
   p.hp = 100;
   p.ammo = weapons.map((w) => w.ammo);
   p.reloadAt = 0;
   p.grenades = 2;
+  p.view = p.id;
 }
 function doSwap(r) {
   let ids = [...r.players.values()]
     .filter((p) => !p.spectator && p.hp > 0)
     .map((p) => p.id);
-  for (let [id, view] of swap(ids, r.settings.variant))
-    r.players.get(id).view = view;
-  r.swapAt = Date.now() + 20000 + Math.random() * 10000;
-  emit(r, { type: "swap", swapAt: r.swapAt });
+  for (let [id, view] of swap(ids, "rotation"))
+    r.players.get(id).view = r.borrowed ? view : id;
 }
 function finish(r) {
+  if (r.state !== "playing") return;
   r.state = "ended";
   emit(r, {
     type: "ended",
     scores: [...r.players.values()]
-      .map((p) => ({ name: p.name, kills: p.kills, deaths: p.deaths }))
+      .map((p) => ({
+        name: p.name,
+        kills: p.kills,
+        deaths: p.deaths,
+        team: p.team,
+        spectator: p.spectator,
+      }))
       .sort((a, b) => b.kills - a.kills),
+    teams: teamScores(r.players.values()),
   });
   roster(r);
 }
@@ -240,11 +260,14 @@ wss.on("connection", (ws, req) => {
               map: 0,
               theme: 0,
               limit: 20,
-              duration: 180,
+              duration: 60,
             },
             state: "lobby",
             history: [],
-            swapAt: now + 23000,
+            grenades: [],
+            swapAt: now + 5000,
+            borrowed: false,
+            startedAt: 0,
             end: 0,
           };
           rooms.set(code, r);
@@ -287,6 +310,9 @@ wss.on("connection", (ws, req) => {
         };
         p.view = p.id;
         spawn(r, p);
+        if (p.spectator && r.state === "playing")
+          p.view =
+            [...r.players.values()].find((q) => !q.spectator)?.id || p.id;
         r.players.set(p.id, p);
         if (!r.host) r.host = p.id;
         send(ws, {
@@ -300,6 +326,14 @@ wss.on("connection", (ws, req) => {
         return;
       }
       if (!p) return;
+      if (m.type === "spectate" && p.spectator) {
+        const targets = [...r.players.values()].filter(
+          (q) => !q.spectator && q.hp > 0,
+        );
+        const index = targets.findIndex((q) => q.id === p.view);
+        p.view = targets[(index + 1) % targets.length]?.id || p.id;
+        return;
+      }
       if (m.type === "ready") {
         p.ready = true;
         roster(r);
@@ -307,8 +341,6 @@ wss.on("connection", (ws, req) => {
       if (m.type === "settings" && r.host === p.id && r.state !== "playing") {
         let s = m.settings || {};
         if (["swap", "team", "lms"].includes(s.mode)) r.settings.mode = s.mode;
-        if (["rotation", "pair", "kill"].includes(s.variant))
-          r.settings.variant = s.variant;
         if ([0, 1].includes(s.map)) r.settings.map = s.map;
         if ([0, 1, 2, 3].includes(s.theme)) r.settings.theme = s.theme;
         roster(r);
@@ -321,14 +353,20 @@ wss.on("connection", (ws, req) => {
           return;
         }
         r.state = "playing";
-        r.end = now + r.settings.duration * 1000;
-        r.swapAt = now + 23000;
+        r.startedAt = now;
+        r.end = now + 60000;
+        r.borrowed = false;
+        r.swapAt = now + 5000;
         r.history = [];
+        r.grenades = [];
         for (let q of r.players.values()) {
           spawn(r, q);
           q.kills = q.deaths = 0;
-          q.view = q.id;
+          q.cache.clear();
         }
+        const first = [...r.players.values()].find((q) => !q.spectator);
+        for (let q of r.players.values())
+          if (q.spectator) q.view = first?.id || q.id;
         roster(r);
       }
     } catch {
@@ -366,7 +404,62 @@ function step() {
         finish(r);
         continue;
       }
-      if (now >= r.swapAt && r.settings.variant !== "kill") doSwap(r);
+      const phase = perspectivePhase(r.startedAt, now);
+      if (phase.borrowed !== r.borrowed || phase.endsAt !== r.swapAt) {
+        r.borrowed = phase.borrowed;
+        r.swapAt = phase.endsAt;
+        emit(r, { type: "swap", swapAt: r.swapAt, borrowed: r.borrowed });
+      }
+      // Rebuild assignments after deaths, respawns and disconnects as well.
+      doSwap(r);
+      for (let n = r.grenades.length - 1; n >= 0; n--) {
+        const g = r.grenades[n];
+        g.x += g.vx / 60;
+        g.y += g.vy / 60;
+        g.z += g.vz / 60;
+        g.vy -= 18 / 60;
+        const collision =
+          g.y <= 0 ||
+          Math.abs(g.x) >= 24 ||
+          Math.abs(g.z) >= 24 ||
+          maps[r.settings.map].some(
+            ([x, z, w, d, h]) =>
+              Math.abs(g.x - x) < w && Math.abs(g.z - z) < d && g.y < h,
+          );
+        if (!collision && now < g.end) continue;
+        r.grenades.splice(n, 1);
+        emit(r, { type: "blast", x: g.x, y: Math.max(0, g.y), z: g.z });
+        const owner = r.players.get(g.owner);
+        for (const q of r.players.values()) {
+          const range = Math.hypot(q.x - g.x, q.z - g.z);
+          if (
+            q.id === g.owner ||
+            q.spectator ||
+            q.hp <= 0 ||
+            range >= 5 ||
+            (r.settings.mode === "team" && owner?.team === q.team) ||
+            !visible(
+              { x: g.x, y: Math.max(0, g.y) - 1.3, z: g.z },
+              q,
+              r.settings.map,
+            )
+          )
+            continue;
+          const damage = Math.round(75 * (1 - range / 5));
+          q.hp = Math.max(0, q.hp - damage);
+          if (owner) send(owner.ws, { type: "hit", damage, head: false });
+          if (!q.hp && owner) {
+            q.deaths++;
+            q.died = now;
+            q.view = owner.id;
+            owner.kills++;
+            emit(r, {
+              type: "kill",
+              text: `${owner.name} → ${q.name} · GRENADE`,
+            });
+          }
+        }
+      }
       for (let p of r.players.values()) {
         if (p.spectator) continue;
         if (p.hp <= 0) {
@@ -394,14 +487,24 @@ function step() {
               let rewind = Math.max(now - 200, Math.min(now, i.time - 100));
               let past = r.history.findLast((h) => h.time <= rewind)
                 ?.players || [...r.players.values()];
+              const muzzle = gunPosition(p);
+              const gunOrigin = {
+                ...p,
+                x: muzzle.x,
+                y: muzzle.y - 1.5,
+                z: muzzle.z,
+              };
+              const clearBarrel = visible(p, gunOrigin, r.settings.map);
               for (let n = 0; n < (w.pellets || 1); n++) {
-                let h = hit(
-                  p,
-                  i.yaw + (Math.random() - 0.5) * w.spread,
-                  i.pitch + (Math.random() - 0.5) * w.spread,
-                  past,
-                  r.settings.map,
-                );
+                let h =
+                  clearBarrel &&
+                  hit(
+                    gunOrigin,
+                    i.yaw + (Math.random() - 0.5) * w.spread,
+                    i.pitch + (Math.random() - 0.5) * w.spread,
+                    past,
+                    r.settings.map,
+                  );
                 if (h) {
                   let q = r.players.get(h.id);
                   if (
@@ -412,22 +515,35 @@ function step() {
                     metrics.hits++;
                     let damage = w.damage * (h.head ? 2 : 1);
                     q.hp = Math.max(0, q.hp - damage);
-                    send(p.ws, { type: "hit", damage, head: h.head });
+                    send(p.ws, {
+                      type: "hit",
+                      damage,
+                      head: h.head,
+                      inputTime: i.time,
+                    });
                     if (!q.hp) {
                       q.deaths++;
                       q.died = now;
+                      q.view = p.id;
                       p.kills++;
                       emit(r, {
                         type: "kill",
                         text: `${p.name} → ${q.name}${h.head ? " · HEADSHOT" : ""}`,
                       });
-                      if (r.settings.variant === "kill") doSwap(r);
-                      if (p.kills >= r.settings.limit) finish(r);
                     }
                   }
                 }
               }
-              emit(r, { type: "shot", id: p.id, weapon: p.weapon });
+              emit(r, {
+                type: "shot",
+                id: p.id,
+                weapon: p.weapon,
+                x: p.x,
+                y: p.y,
+                z: p.z,
+                yaw: i.yaw,
+                pitch: i.pitch,
+              });
             }
           }
           if (
@@ -437,18 +553,28 @@ function step() {
           ) {
             p.grenades--;
             p.lastGrenade = now;
+            const speed = 12,
+              horiz = Math.cos(i.pitch);
+            const g = {
+              owner: p.id,
+              x: p.x,
+              y: p.y + 1.45,
+              z: p.z,
+              vx: -Math.sin(i.yaw) * horiz * speed,
+              vy: Math.sin(i.pitch) * speed + 3,
+              vz: -Math.cos(i.yaw) * horiz * speed,
+              end: now + 2000,
+            };
+            r.grenades.push(g);
             emit(r, {
-              type: "kill",
-              text: p.name + " deployed a shock grenade",
+              type: "grenade",
+              x: g.x,
+              y: g.y,
+              z: g.z,
+              vx: g.vx,
+              vy: g.vy,
+              vz: g.vz,
             });
-            for (let q of r.players.values())
-              if (
-                q.id !== p.id &&
-                Math.hypot(q.x - p.x, q.z - p.z) < 6 &&
-                q.hp > 0
-              ) {
-                q.hp = Math.max(1, q.hp - 40);
-              }
           }
         } else if (now - (p.inputAt || 0) < 150) {
           move(
@@ -468,13 +594,16 @@ function step() {
             else p.ammo[p.weapon] = weapons[p.weapon].ammo;
           }
       }
-      if (
-        r.settings.mode === "lms" &&
-        r.players.size > 1 &&
-        [...r.players.values()].filter((p) => !p.spectator && p.hp > 0)
-          .length <= 1
-      )
-        finish(r);
+      doSwap(r);
+      for (const spectator of r.players.values())
+        if (
+          spectator.spectator &&
+          (!r.players.get(spectator.view) ||
+            r.players.get(spectator.view).hp <= 0)
+        )
+          spectator.view =
+            [...r.players.values()].find((q) => !q.spectator && q.hp > 0)?.id ||
+            spectator.id;
       r.history.push({
         time: now,
         players: [...r.players.values()].map((p) => ({
@@ -497,9 +626,15 @@ function step() {
           if (
             q.id !== p.id &&
             q.id !== p.view &&
-            Math.hypot(q.x - p.x, q.z - p.z) > 55
-          )
+            Math.hypot(q.x - p.x, q.z - p.z) > 80 &&
+            Math.hypot(
+              q.x - (r.players.get(p.view)?.x ?? p.x),
+              q.z - (r.players.get(p.view)?.z ?? p.z),
+            ) > 80
+          ) {
+            p.cache.delete(q.id);
             continue;
+          }
           let sig = signature(q);
           if (full || p.cache.get(q.id) !== sig) {
             changed.push(q);
@@ -516,8 +651,13 @@ function step() {
   }
   let elapsed = performance.now() - begin;
   metrics.ticks++;
-  metrics.totalTickMs += elapsed;
-  metrics.maxTickMs = Math.max(metrics.maxTickMs, elapsed);
+  if (elapsed > 250) {
+    metrics.suspendedMs = (metrics.suspendedMs || 0) + elapsed;
+    metrics.excludedTicks = (metrics.excludedTicks || 0) + 1;
+  } else {
+    metrics.totalTickMs += elapsed;
+    metrics.maxTickMs = Math.max(metrics.maxTickMs, elapsed);
+  }
 }
 // Deadline accumulator keeps simulation steps fixed even when timer callbacks jitter.
 let last = performance.now(),
@@ -549,3 +689,20 @@ function close() {
 }
 process.on("SIGTERM", close);
 process.on("SIGINT", close);
+process.on("uncaughtException", (error) => {
+  console.error("Fatal server error:", error);
+  close();
+});
+process.on("unhandledRejection", (error) => {
+  console.error("Unhandled server rejection:", error);
+  close();
+});
+server.on("error", (error) => {
+  console.error("Server listener error:", error.message);
+  clearInterval(timer);
+  process.exit(1);
+});
+wss.on("error", (error) => {
+  console.error("WebSocket listener error:", error.message);
+  close();
+});

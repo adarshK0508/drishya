@@ -1,4 +1,4 @@
-// Network byte order: 28-byte input; snapshots carry changed 26-byte entities.
+// Network byte order: 28-byte input; snapshots carry changed 28-byte entities.
 export function inputPacket(i) {
   let b = new ArrayBuffer(28),
     v = new DataView(b);
@@ -35,6 +35,7 @@ export function signature(p) {
     Math.round(p.x * 100),
     Math.round(p.y * 100),
     Math.round(p.z * 100),
+    Math.round((p.vy || 0) * 100),
     Math.round(p.yaw * 1000),
     Math.round(p.pitch * 1000),
     p.hp,
@@ -47,7 +48,7 @@ export function signature(p) {
   ].join(",");
 }
 export function snapshot(players, tick, time, ack, full = false) {
-  let b = new ArrayBuffer(20 + players.length * 26),
+  let b = new ArrayBuffer(20 + players.length * 28),
     v = new DataView(b);
   v.setUint8(0, 2);
   v.setUint8(1, full ? 1 : 0);
@@ -56,7 +57,7 @@ export function snapshot(players, tick, time, ack, full = false) {
   v.setUint32(14, ack);
   v.setUint16(18, players.length);
   players.forEach((p, n) => {
-    let o = 20 + n * 26;
+    let o = 20 + n * 28;
     v.setUint16(o, p.id);
     v.setInt16(o + 2, Math.round(p.x * 100));
     v.setInt16(o + 4, Math.round(p.y * 100));
@@ -72,6 +73,7 @@ export function snapshot(players, tick, time, ack, full = false) {
     v.setUint32(o + 20, p.seq);
     v.setUint8(o + 24, p.team);
     v.setUint8(o + 25, p.spectator ? 1 : 0);
+    v.setInt16(o + 26, Math.round((p.vy || 0) * 100));
   });
   return b;
 }
@@ -80,16 +82,17 @@ export function readSnapshot(b) {
   if (
     b.byteLength < 20 ||
     v.getUint8(0) !== 2 ||
-    b.byteLength !== 20 + v.getUint16(18) * 26
+    b.byteLength !== 20 + v.getUint16(18) * 28
   )
     throw Error("snapshot size");
   let players = [];
   for (let n = 0; n < v.getUint16(18); n++) {
-    let o = 20 + n * 26;
+    let o = 20 + n * 28;
     players.push({
       id: v.getUint16(o),
       x: v.getInt16(o + 2) / 100,
       y: v.getInt16(o + 4) / 100,
+      vy: v.getInt16(o + 26) / 100,
       z: v.getInt16(o + 6) / 100,
       yaw: v.getInt16(o + 8) / 1000,
       pitch: v.getInt16(o + 10) / 1000,

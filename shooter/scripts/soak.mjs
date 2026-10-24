@@ -29,6 +29,8 @@ try {
   let soak = await runBots({
     url: url.replace("http:", "ws:"),
     duration: Number(process.env.SOAK_MS || 600000),
+    activeTicks: Number(process.env.SOAK_TICKS || 0),
+    metricsUrl: url + "/metrics",
   });
   clearInterval(poll);
   let conditions = [];

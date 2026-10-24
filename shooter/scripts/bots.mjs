@@ -9,6 +9,8 @@ export async function runBots({
   latency = 0,
   jitter = 0,
   loss = 0,
+  activeTicks = 0,
+  metricsUrl = "",
 } = {}) {
   let bots = [],
     timers = new Set(),
@@ -20,6 +22,7 @@ export async function runBots({
       samples: 0,
       disconnects: 0,
       errors: 0,
+      hitLatencies:[],
       latency,
       jitter,
       loss,
@@ -73,7 +76,7 @@ export async function runBots({
             if (p) {
               const oldX = b.local.x,
                 oldZ = b.local.z;
-              b.local = { ...p, vy: 0 };
+              b.local = { ...p };
               b.pending = b.pending.filter((i) => i.seq > s.ack);
               if (p.hp > 0) for (let i of b.pending) move(b.local, i);
               const err = Math.hypot(oldX - b.local.x, oldZ - b.local.z);
@@ -95,6 +98,10 @@ export async function runBots({
           resolve();
         }
         if (m.type === "error") stats.errors++;
+        if(m.type==='hit'&&Number.isFinite(m.inputTime)){
+          const elapsed=Date.now()-m.inputTime;
+          if(elapsed>=0&&elapsed<3000&&stats.hitLatencies.length<10000)stats.hitLatencies.push(elapsed);
+        }
         if (m.type === "ended" && n === 0)
           later(() => {
             if (ws.readyState === 1) ws.send(JSON.stringify({ type: "start" }));
@@ -128,18 +135,34 @@ export async function runBots({
         });
     }
   });
-  await new Promise((r) => setTimeout(r, duration));
+  let completedTicks = 0;
+  if (activeTicks) {
+    const baseline = (await (await fetch(metricsUrl)).json()).ticks;
+    while (completedTicks < activeTicks) {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      completedTicks =
+        (await (await fetch(metricsUrl)).json()).ticks - baseline;
+    }
+  } else await new Promise((r) => setTimeout(r, duration));
   stop();
   for (let t of timers) clearTimeout(t);
   let unexpectedDisconnects = stats.disconnects;
   for (let b of bots) b.ws.close();
+  const sorted=stats.hitLatencies.sort((a,b)=>a-b);
+  const hitSamples=sorted.length,hitLatencyMean=hitSamples?sorted.reduce((n,x)=>n+x,0)/hitSamples:null,hitLatencyP95=hitSamples?sorted[Math.floor(.95*(hitSamples-1))]:null;
+  delete stats.hitLatencies;
   return {
     ...stats,
     disconnects: unexpectedDisconnects,
     durationMs: Date.now() - start,
+    activeTicks: completedTicks,
     meanPredictionError: stats.errorSum / Math.max(1, stats.samples),
-    bytesPerClientSecond: stats.bytes / count / (duration / 1000),
+    bytesPerClientSecond:
+      stats.bytes /
+      count /
+      (activeTicks ? completedTicks / 60 : duration / 1000),
     room: code,
+    hitSamples,hitLatencyMean,hitLatencyP95,
   };
 }
 if (process.argv[1]?.endsWith("bots.mjs")) {

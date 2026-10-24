@@ -1,0 +1,28 @@
+{
+  "passed": true,
+  "distance": 0.1992485884517102,
+  "jumpHeight": 0.35000000000000003,
+  "endOffsetMs": 121,
+  "cycles": 3,
+  "borrowedShot": {
+    "shooterId": 1,
+    "viewId": 2,
+    "muzzle": {
+      "x": -19.633732364001453,
+      "y": 1.35,
+      "z": 20.318512648344132
+    },
+    "screenShake": false
+  },
+  "ownShot": {
+    "shooterId": 1,
+    "viewId": 1,
+    "muzzle": {
+      "x": -19.633725427583002,
+      "y": 1.3557599388337733,
+      "z": 20.318534619282612
+    },
+    "screenShake": true
+  },
+  "errors": []
+}

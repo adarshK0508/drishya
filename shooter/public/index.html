@@ -62,10 +62,8 @@
             <option value="lms">Last Man Standing</option>
           </select></label
         ><label
-          >Swap pattern<select id="variant">
-            <option value="rotation">Full rotation</option>
-            <option value="pair">Random pair</option>
-            <option value="kill">On kill</option>
+          >POV cycle<select id="variant" disabled>
+            <option value="rotation">5s own → 15s swapped × 3</option>
           </select></label
         ><label
           >Arena<select id="map">
@@ -80,6 +78,23 @@
             <option value="3">Retro Pixel</option>
           </select></label
         >
+        <label class="hidden"
+          >Score limit<input
+            id="limit"
+            type="number"
+            min="5"
+            max="100"
+            value="20"
+        /></label>
+        <label
+          >Match seconds<input
+            id="duration"
+            type="number"
+            min="60"
+            max="60"
+            value="60"
+            disabled
+        /></label>
       </div>
       <button id="ready">READY UP</button>
       <button id="start">START MATCH ↗</button>
@@ -87,14 +102,18 @@
     </section>
     <div id="hud" class="hidden">
       <header>
-        <b>◈ PARALLAX</b><span id="timer">03:00</span
+        <b>◈ PARALLAX</b><span id="timer">01:00</span
         ><button id="settingsbtn">SETTINGS</button>
       </header>
       <div id="viewlabel">YOUR PERSPECTIVE</div>
+      <div id="matchscore" aria-live="off"></div>
+      <div id="connection" class="hidden" role="status"></div>
       <div id="countdown"></div>
       <div id="crosshair">+</div>
       <div id="hitmarker"></div>
       <div id="feed"></div>
+      <div id="damageflash"></div>
+      <div id="scopeview" class="hidden" aria-hidden="true"></div>
       <canvas
         id="mini"
         width="180"
@@ -109,6 +128,7 @@
         CLICK ARENA TO CAPTURE MOUSE · WASD MOVE · 1–4 WEAPONS · R RELOAD · G
         GRENADE
       </p>
+      <button id="spectateNext" class="hidden">NEXT PLAYER →</button>
     </div>
     <div id="stats" class="hidden"></div>
     <dialog id="settings">

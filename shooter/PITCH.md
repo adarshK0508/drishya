@@ -4,7 +4,7 @@
 2. **Original idea, modern architecture.** Original Unity exchanged JPEG camera frames. This implementation synchronizes one authoritative world and exchanges camera targets.
 3. **Network engineering.** 60 Hz fixed simulation, 20 Hz binary delta snapshots, prediction/reconciliation, adaptive interpolation, bounded historical hitboxes, validation and reconnect tokens.
 4. **Live demonstration and evidence.** Two players, view rotation, minimap navigation, then measured browser/bot test results. Distinguish software-rendered FPS from real laptop GPU performance.
-5. **Next milestone.** Walkable vertical map geometry, ballistic grenades, complete audio/visual effects, stronger admission control, larger subjective latency trials.
+5. **Next milestone.** More vertical map geometry, weapon animation, larger human latency trials and stronger admission control for public matchmaking.
 
 ## Judge Q&A
 - **Can clients teleport or claim hits?** No position/target messages are accepted. Shared input semantics execute on the server; rays and health are server-owned.

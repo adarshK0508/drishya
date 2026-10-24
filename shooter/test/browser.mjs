@@ -45,6 +45,13 @@ try {
   await b.locator("#name").fill("Beta");
   await b.locator("#code").fill(code);
   await b.locator("#join").click();
+  await a.locator("#map").selectOption("1");
+  await a.locator("#theme").selectOption("2");
+  await b.waitForFunction(
+    () =>
+      document.getElementById("map").value === "1" &&
+      document.getElementById("theme").value === "2",
+  );
   await a.locator("#ready").click();
   await b.locator("#ready").click();
   await a.locator("#start").click();
@@ -54,6 +61,43 @@ try {
   await a.screenshot({ path: "docs/arena.png" });
   assert.ok(telemetry.snapshots > 30);
   assert.ok(await b.evaluate(() => window.telemetry.snapshots > 10));
+  await b.waitForFunction(
+    () => !document.getElementById("hud").classList.contains("hidden"),
+  );
+  await b.bringToFront();
+  await b.waitForTimeout(300);
+  const before = await b.evaluate(() => window.telemetry.position);
+  await b.keyboard.down("w");
+  await b.waitForTimeout(1100);
+  await b.keyboard.up("w");
+  const after = await b.evaluate(() => ({ ...window.telemetry }));
+  assert.ok(
+    Math.hypot(after.position.x - before.x, after.position.z - before.z) > 0.2,
+    `authoritative movement reached client: ${JSON.stringify({ before, after })}`,
+  );
+  const c = await browser.newPage();
+  c.on("pageerror", (e) => errors.push(e.message));
+  await c.goto("http://localhost:3092");
+  await c.locator("#name").fill("Observer");
+  await c.locator("#code").fill(code);
+  await c.locator("#spectator").check();
+  await c.locator("#join").click();
+  await c.waitForFunction(() =>
+    document.getElementById("viewlabel").textContent.startsWith("SPECTATING"),
+  );
+  await c.locator("#spectateNext").click();
+  assert.equal(await c.locator("#spectateNext").isVisible(), true);
+  await a.waitForFunction(
+    () =>
+      document
+        .getElementById("viewlabel")
+        .textContent.startsWith("BORROWED EYES"),
+    undefined,
+    { timeout: 35000 },
+  );
+  await a.screenshot({ path: "docs/borrowed.png" });
+  await a.keyboard.press("F3");
+  assert.equal(await a.locator("#stats").isVisible(), true);
   await a.locator("#settingsbtn").click();
   await a.locator("#closeSettings").click();
   await a.evaluate(() => document.getElementById("game").click());

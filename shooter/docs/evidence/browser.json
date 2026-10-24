@@ -1,10 +1,29 @@
 {
   "telemetry": {
     "snapshots": 91,
-    "fps": 35.17722387935074,
+    "fps": 48.34669160037738,
     "corrections": 0,
     "predictionError": 0,
-    "rtt": 0
+    "rtt": 0,
+    "hitLatency": 0,
+    "position": {
+      "x": -20,
+      "y": 0,
+      "z": -20
+    },
+    "keys": 0,
+    "active": true,
+    "ownId": 1,
+    "yaw": -2.356194490192345,
+    "roundEnd": 1792837620251,
+    "phaseEnd": 1792837565251,
+    "lastAck": 199,
+    "viewId": 1,
+    "borrowed": false,
+    "visibleBodyIds": [
+      2
+    ],
+    "bodiesFrustumCulled": false
   },
   "errors": [],
   "browser": "Chromium headless SwiftShader",
