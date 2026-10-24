@@ -176,6 +176,10 @@ function connect() {
       if (frames.length > 10) frames.shift();
       let me = players.get(id);
       if (me) {
+        if (snapshots === 1) {
+          yaw = Math.atan2(me.x, me.z);
+          pitch = 0;
+        }
         const oldX = local.x,
           oldZ = local.z;
         local = { ...me, vy: local.vy || 0 };
@@ -227,6 +231,7 @@ function connect() {
       }
       $("start").disabled = id !== m.host;
       active = m.state === "playing";
+      document.querySelector(".grain").style.opacity = active ? "0" : "1";
       if (active) {
         $("lobby").classList.add("hidden");
         $("hud").classList.remove("hidden");
