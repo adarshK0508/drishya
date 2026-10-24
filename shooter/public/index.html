@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PARALLAX / See differently. Fight together.</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <canvas id="game" aria-label="Three dimensional arena"></canvas>
+    <div class="grain"></div>
+    <main id="menu">
+      <nav>
+        <b>◈ PARALLAX</b><span>EXPERIMENTAL COMBAT SYSTEM / 01</span
+        ><button id="help">FIELD MANUAL ↗</button>
+      </nav>
+      <section class="hero">
+        <p class="eyebrow">YOUR BODY. SOMEONE ELSE’S EYES.</p>
+        <h1>TRUST YOUR<br /><em>OTHER SENSES.</em></h1>
+        <p class="intro">
+          A multiplayer arena where your perspective is never yours to keep.<br />Map
+          your movement. Borrow a view. Make the shot.
+        </p>
+        <div class="join">
+          <label
+            >CALLSIGN<input
+              id="name"
+              maxlength="18"
+              value="Pilot"
+              autocomplete="nickname" /></label
+          ><label
+            >ROOM CODE<input
+              id="code"
+              maxlength="4"
+              placeholder="QUICK MATCH" /></label
+          ><button id="join">ENTER THE ARENA <span>↗</span></button
+          ><label class="check"
+            ><input type="checkbox" id="spectator" /> Join as spectator</label
+          >
+        </div>
+        <p id="status" role="status">
+          LOCAL NETWORK · NO ACCOUNT · UP TO 8 PLAYERS
+        </p>
+      </section>
+      <footer>
+        <span>01 / PERSPECTIVE SWAP</span
+        ><span>60 Hz AUTHORITY / PROCEDURAL WORLD</span
+        ><span>SYNTAX ERROR 2026</span>
+      </footer>
+    </main>
+    <section id="lobby" class="panel hidden">
+      <p class="eyebrow">SQUAD ASSEMBLY</p>
+      <h2>Room <span id="roomcode"></span></h2>
+      <p>Share this code with players on this server.</p>
+      <div id="roster"></div>
+      <div class="settingsgrid">
+        <label
+          >Mode<select id="mode">
+            <option value="swap">Perspective Swap</option>
+            <option value="team">Team Deathmatch</option>
+            <option value="lms">Last Man Standing</option>
+          </select></label
+        ><label
+          >Swap pattern<select id="variant">
+            <option value="rotation">Full rotation</option>
+            <option value="pair">Random pair</option>
+            <option value="kill">On kill</option>
+          </select></label
+        ><label
+          >Arena<select id="map">
+            <option value="0">The Exchange</option>
+            <option value="1">Split Signal</option>
+          </select></label
+        ><label
+          >World theme<select id="theme">
+            <option value="0">Neon Grid</option>
+            <option value="1">Desert</option>
+            <option value="2">Industrial</option>
+            <option value="3">Retro Pixel</option>
+          </select></label
+        >
+      </div>
+      <button id="ready">READY UP</button>
+      <button id="start">START MATCH ↗</button>
+      <p id="lobbyhint"></p>
+    </section>
+    <div id="hud" class="hidden">
+      <header>
+        <b>◈ PARALLAX</b><span id="timer">03:00</span
+        ><button id="settingsbtn">SETTINGS</button>
+      </header>
+      <div id="viewlabel">YOUR PERSPECTIVE</div>
+      <div id="countdown"></div>
+      <div id="crosshair">+</div>
+      <div id="hitmarker"></div>
+      <div id="feed"></div>
+      <canvas
+        id="mini"
+        width="180"
+        height="180"
+        aria-label="Minimap showing your real body"
+      ></canvas>
+      <div class="bottom">
+        <span id="health">100 / HEALTH</span><span id="weapon">PISTOL</span
+        ><span id="ammo">12</span>
+      </div>
+      <p class="hint" id="lockhint">
+        CLICK ARENA TO CAPTURE MOUSE · WASD MOVE · 1–4 WEAPONS · R RELOAD · G
+        GRENADE
+      </p>
+    </div>
+    <div id="stats" class="hidden"></div>
+    <dialog id="settings">
+      <h2>Field settings</h2>
+      <label
+        >Quality<select id="quality">
+          <option>Low</option>
+          <option selected>Medium</option>
+          <option>High</option>
+        </select></label
+      ><label
+        >Sensitivity<input
+          id="sensitivity"
+          type="range"
+          min="0.5"
+          max="3"
+          step="0.1"
+          value="1" /></label
+      ><label
+        >Field of view<input
+          id="fov"
+          type="range"
+          min="55"
+          max="110"
+          value="75" /></label
+      ><label
+        >Volume<input
+          id="volume"
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value="0.3"
+      /></label>
+      <p>
+        WASD move · Shift sprint · Space jump · Ctrl crouch<br />Mouse aim ·
+        left click shoot · right click scope<br />1–4 weapons · R reload · G
+        shock grenade · F3 telemetry<br />Escape releases mouse. During swaps,
+        the minimap marks your own body in white.
+      </p>
+      <button id="closeSettings">BACK TO ARENA</button>
+    </dialog>
+    <dialog id="results">
+      <p class="eyebrow">SIGNAL COMPLETE</p>
+      <h2>Match results</h2>
+      <div id="scores"></div>
+      <button id="returnLobby">BACK TO LOBBY</button>
+    </dialog>
+    <script type="module" src="/client.mjs"></script>
+  </body>
+</html>

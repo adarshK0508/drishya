@@ -7,3 +7,4 @@
 - Treat the supplied S1–S13 text as the source brief; do not fetch the video.
 - Allocate the missing 10 camera points in the car table to surveillance, as requested; weights are design hypotheses, not validated safety predictors.
 
+- Repository-local Git identity is Hackathon Builder <builder@localhost>, because no author identity was configured; no global Git settings changed.
