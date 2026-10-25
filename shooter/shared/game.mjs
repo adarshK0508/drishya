@@ -3,8 +3,8 @@ import { mansionColliders } from "./mansion.mjs";
 export const DT = 1 / 60,
   SIZE = 24;
 export const weapons = [
-  { name: "Revolver", rate: 650, damage: 50, ammo: 6, spread: 0.003 },
-  { name: "SMG", rate: 95, damage: 12, ammo: 30, spread: 0.045 },
+  { name: "Revolver", rate: 650, damage: 15, ammo: 20, spread: 0.003 },
+  { name: "Sightlock", rate: 650, damage: 70, ammo: 1, spread: 0 },
   { name: "Shotgun", rate: 850, damage: 13, ammo: 6, spread: 0.12, pellets: 7 },
   { name: "Sniper", rate: 1200, damage: 80, ammo: 5, spread: 0.002 },
 ];

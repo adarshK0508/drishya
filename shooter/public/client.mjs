@@ -1,13 +1,22 @@
 import { Effects } from "./effects.mjs";
+import { InterfaceView } from "./interface.mjs";
+import { Soundscape } from "./audio.mjs";
+import { catPose } from "/shared/cat.mjs";
 import { fixedTicker } from "/shared/ticker.mjs";
 import * as THREE from "./vendor/three.module.js";
-import { move, weapons, gunPosition } from "/shared/game.mjs";
+import { move, weapons, gunPosition, rayBox, maps } from "/shared/game.mjs";
 import { inputPacket, readSnapshot } from "/shared/protocol.mjs";
-import { buildMansion, createFigure } from "./mansion.mjs";
+import { buildMansion, createFigure, createTorch } from "./mansion.mjs";
 import { buildDetails } from "./house-details.mjs";
-import { hunterBoost } from "/shared/hunt.mjs";
-import { interactions, mansionRooms } from "/shared/mansion.mjs";
+import { hunterBoost, RULES, mayMove } from "/shared/hunt.mjs";
+import {
+  canActivateSpecial,
+  canTakeTorch,
+  visibilityScale,
+} from "/shared/special.mjs";
+import { interactions } from "/shared/mansion.mjs";
 const $ = (id) => document.getElementById(id);
+const interfaceView = new InterfaceView();
 let ws,
   id = 0,
   token = sessionStorage.getItem("drishya-token"),
@@ -39,7 +48,6 @@ let ws,
   lastArrival = 0,
   lostSnapshots = 0,
   hitLatency = 0,
-  lastStep = 0,
   lastHealth = 100,
   connecting = false,
   buffer = 100;
@@ -49,7 +57,9 @@ let lookYaw = 0,
   borrowedCamera = false,
   noticeTimer;
 let currentInteraction = null;
-const ammoIcons = Array.from({ length: 6 }, () => {
+let specialSession = null,
+  specialPhase = null;
+const ammoIcons = Array.from({ length: RULES.ammo }, () => {
   const e = document.createElement("i");
   e.className = "bullet";
   $("ammoIcons").append(e);
@@ -84,20 +94,42 @@ buildMansion(scene);
 const details = buildDetails(scene);
 const effects = new Effects(scene);
 const figures = [createFigure(scene, 0), createFigure(scene, 1)];
+const pickupTorch = createTorch();
+scene.add(pickupTorch);
+function myPlayer() {
+  return room?.players.find((p) => p.id === id);
+}
+function specialSetting() {
+  return room?.special?.phase === "setup" && room.special.hunter === id;
+}
+function specialFrozenHider() {
+  return (
+    room?.special &&
+    room.special.phase !== "invisible" &&
+    room.special.hider === id
+  );
+}
+function specialAvailable() {
+  const other = [...players.values()].find((p) => p.id !== id);
+  return canActivateSpecial(
+    room,
+    { ...players.get(id), ...myPlayer(), ...local },
+    other && { ...other, ...room.players.find((p) => p.id === other.id) },
+  );
+}
+$("specialActivate").onclick = () => {
+  if (specialAvailable()) send({ type: "special" });
+};
 function myRole() {
   return room?.players.find((p) => p.id === id)?.role || "hider";
-}
-function myRoomName() {
-  return (
-    mansionRooms.find(
-      (r) => Math.abs(local.x - r.x) < 8.8 && Math.abs(local.z - r.z) < 6.5,
-    )?.name || "Corridor"
-  );
 }
 function canMove() {
   return (
     !room?.paused &&
     !room?.borrowed &&
+    (!room?.special ||
+      room.special.phase === "invisible" ||
+      (room.special.phase === "action" && room.special.hunter === id)) &&
     (room?.stage === "search" ||
       (room?.stage === "hide" && myRole() === "hider"))
   );
@@ -117,23 +149,17 @@ function announce(text) {
   );
 }
 let audio;
-let musicGain;
-function startMusic() {
-  if (musicGain || !audio) return;
-  musicGain = audio.createGain();
-  musicGain.gain.value = +$("volume").value * 0.012;
-  musicGain.connect(audio.destination);
-  for (const [frequency, type] of [
-    [55, "sine"],
-    [82.41, "triangle"],
-  ]) {
-    const oscillator = audio.createOscillator();
-    oscillator.type = type;
-    oscillator.frequency.value = frequency;
-    oscillator.connect(musicGain);
-    oscillator.start();
-  }
+const sounds = new Soundscape({
+  volume: +$("volume").value,
+  onBlocked: (blocked) => $("soundHint").classList.toggle("hidden", !blocked),
+});
+function unlockAudio() {
+  sounds.unlock();
+  audio = sounds.context;
 }
+addEventListener("pointerdown", unlockAudio, { capture: true });
+addEventListener("keydown", unlockAudio, { capture: true });
+let catSoundKey = null;
 function beep(freq = 440, duration = 0.06) {
   if (!audio || +$("volume").value === 0) return;
   let o = audio.createOscillator(),
@@ -256,7 +282,7 @@ function connect() {
         if (active && me.hp < lastHealth) {
           $("damageflash").style.opacity = "1";
           setTimeout(() => ($("damageflash").style.opacity = "0"), 150);
-          beep(95, 0.13);
+          if (myRole() !== "hider") beep(95, 0.13);
         }
         lastHealth = me.hp;
       }
@@ -284,6 +310,11 @@ function connect() {
     }
     if (m.type === "room") {
       if (room?.round !== m.round || room?.stage !== m.stage) {
+        if (room?.round !== m.round) {
+          sounds.resetSteps();
+          sounds.stopCat();
+          catSoundKey = null;
+        }
         pending = [];
         frames = [];
         keys = 0;
@@ -291,6 +322,21 @@ function connect() {
         if (room?.round !== m.round) syncPose = true;
       }
       room = m;
+      const session = m.special ? `${m.round}:${m.special.startedAt}` : null;
+      const incomingPhase = m.special?.phase || null;
+      if (session !== specialSession || incomingPhase !== specialPhase) {
+        pending = [];
+        keys = 0;
+        fire = false;
+        if (m.special?.phase === "setup") {
+          clearTimeout(noticeTimer);
+          $("swapNotice").classList.remove("announce");
+          lookYaw = m.special.camera.yaw;
+          lookPitch = m.special.camera.pitch;
+        }
+        specialSession = session;
+        specialPhase = incomingPhase;
+      }
       map = 2;
       $("roster").replaceChildren(
         ...m.players.map((p) => {
@@ -309,6 +355,8 @@ function connect() {
           ? "Waiting for a second player on this server…"
           : "Both players ready up. The host opens the doors.";
       active = m.state === "playing";
+      if (m.state !== "ended") sounds.setMode(active ? "gameplay" : "menu");
+      interfaceView.setPlaying(active);
       document.querySelector(".grain").style.opacity = active ? "0" : "1";
       if (active) {
         $("lobby").classList.add("hidden");
@@ -343,16 +391,46 @@ function connect() {
         noiseSound(0.8, 0.2, 900);
       }
     }
+    if (m.type === "specialLook" && room?.special?.phase === "setup") {
+      room.special.camera = m.camera;
+    }
     if (m.type === "flush") {
       details.flush();
       noiseSound(1.6, 0.5, 1500);
     }
     if (m.type === "cat") {
       room.catAt = m.at;
-      if (Math.hypot(local.x - 12, local.z - 14) < 9) beep(680, 0.18);
+      const key = `${room.round}:${m.at}`;
+      if (key !== catSoundKey) {
+        catSoundKey = key;
+        const play = () => {
+          if (catSoundKey !== key || Date.now() + offset - m.at > 1000) return;
+          sounds.cat(() => ({
+            position: catPose(
+              Math.max(
+                0,
+                ((room.pausedAt || Date.now() + offset) -
+                  (room.catAt || m.at)) /
+                  1000,
+              ),
+            ),
+            listener: local,
+            yaw,
+            range: 16,
+          }));
+        };
+        if (sounds.buffers.cat) play();
+        else void sounds.ready?.then(play);
+      }
     }
     if (m.type === "shot") {
-      beep(m.id === id ? 180 : 100, 0.06);
+      sounds.shot({
+        weapon: m.weapon,
+        own: m.id === id,
+        position: m,
+        listener: local,
+        yaw,
+      });
       const ownCamera = players.get(id)?.view === id;
       effects.shot(
         m.id === id ? { ...local, yaw, pitch } : m,
@@ -378,6 +456,7 @@ function connect() {
       beep(1300);
       setTimeout(() => ($("hitmarker").textContent = ""), 300);
     }
+    if (m.type === "hurt" && m.role === "hider") sounds.hurt();
     if (m.type === "kill") {
       $("feed").textContent = m.text;
       setTimeout(() => ($("feed").textContent = ""), 5000);
@@ -388,9 +467,11 @@ function connect() {
     }
     if (m.type === "ended") {
       active = false;
-      $("resulttitle").textContent = m.winner
-        ? (m.scores.find((p) => p.id === m.winner)?.name || "Player") + " wins"
-        : "A draw in the dark";
+      interfaceView.setPlaying(false);
+      const outcome = !m.winner ? "draw" : m.winner === id ? "win" : "loss";
+      sounds.setOutcome(outcome);
+      sounds.stopCat();
+      interfaceView.showOutcome(outcome);
       $("resultreason").textContent = m.reason;
       $("scores").replaceChildren(
         ...m.scores.map((s) => {
@@ -428,13 +509,11 @@ function connect() {
   };
 }
 $("join").onclick = () => {
-  audio ||= new AudioContext();
-  audio.resume();
-  startMusic();
+  unlockAudio();
   connect();
 };
 $("volume").oninput = () => {
-  if (musicGain) musicGain.gain.value = +$("volume").value * 0.012;
+  sounds.setVolume(+$("volume").value);
 };
 $("ready").onclick = () => send({ type: "ready" });
 $("start").onclick = () => send({ type: "start" });
@@ -461,6 +540,7 @@ $("settingsbtn").onclick = () => {
 };
 $("closeSettings").onclick = () => $("settings").close();
 $("returnLobby").onclick = () => {
+  sounds.setMode("menu");
   $("results").close();
   $("lobby").classList.remove("hidden");
   $("hud").classList.add("hidden");
@@ -488,6 +568,10 @@ addEventListener("keydown", (e) => {
     $("stats").classList.toggle("hidden", !debug);
   }
   if (!active || $("settings").open) return;
+  if (e.code === "KeyF" && !e.repeat && specialAvailable()) {
+    send({ type: "special" });
+    e.preventDefault();
+  }
   if (e.code === "KeyE" && !e.repeat && currentInteraction && canMove()) {
     send({ type: "interact", target: currentInteraction });
   }
@@ -520,12 +604,15 @@ $("game").onclick = async () => {
 addEventListener("mousemove", (e) => {
   if (
     !active ||
+    room?.paused ||
+    specialFrozenHider() ||
     $("settings").open ||
     (!document.pointerLockElement && !e.buttons)
   )
     return;
-  if (room?.borrowed) {
+  if (room?.borrowed || specialSetting()) {
     lookYaw -= e.movementX * 0.002 * +$("sensitivity").value;
+    lookYaw = ((lookYaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
     lookPitch = Math.max(
       -1.5,
       Math.min(1.5, lookPitch - e.movementY * 0.002 * +$("sensitivity").value),
@@ -570,7 +657,8 @@ fixedTicker(() => {
     inputFire ||= !!pad.buttons[7]?.pressed;
     const savedYaw = yaw,
       savedPitch = pitch;
-    if (room.borrowed) {
+    const viewing = room.borrowed || specialSetting();
+    if (viewing) {
       yaw = lookYaw;
       pitch = lookPitch;
     }
@@ -589,9 +677,13 @@ fixedTicker(() => {
             +$("sensitivity").value,
       ),
     );
-    if (room.borrowed) {
+    if (viewing) {
       lookYaw = yaw;
       lookPitch = pitch;
+      yaw = savedYaw;
+      pitch = savedPitch;
+    }
+    if (specialFrozenHider() || room.paused) {
       yaw = savedYaw;
       pitch = savedPitch;
     }
@@ -605,8 +697,8 @@ fixedTicker(() => {
   let i = {
     seq: ++seq,
     keys: inputKeys,
-    yaw,
-    pitch,
+    yaw: specialSetting() ? lookYaw : yaw,
+    pitch: specialSetting() ? lookPitch : pitch,
     time: Date.now() + offset,
     weapon: 0,
     fire: inputFire,
@@ -624,15 +716,14 @@ fixedTicker(() => {
   if (
     inputKeys & 15 &&
     Math.hypot(local.x - oldX, local.z - oldZ) > 0.001 &&
-    Date.now() - lastStep > (inputKeys & 16 ? 250 : 390) &&
     players.get(id)?.hp > 0
   ) {
-    lastStep = Date.now();
-    noiseSound(
-      0.14,
-      inputKeys & 32 ? 0.09 : 0.24,
-      myRoomName() === "Bathroom" ? 1800 : 650,
-    );
+    sounds.footstep(id, Math.hypot(local.x - oldX, local.z - oldZ), {
+      role: myRole(),
+      own: true,
+      sprinting: !!(inputKeys & 16),
+      crouched: !!(inputKeys & 32),
+    });
   }
 });
 setInterval(() => send({ type: "ping", time: Date.now() }), 1000);
@@ -651,11 +742,17 @@ function render(now) {
     }
   } else lowSince = 0;
   let me = players.get(id),
-    view = room?.borrowed
-      ? [...players.values()].find((p) => p.id !== id) || me
-      : me,
+    view =
+      room?.special && room.special.phase !== "invisible"
+        ? players.get(room.special.hider)
+        : room?.borrowed
+          ? [...players.values()].find((p) => p.id !== id) || me
+          : me,
     renderPlayers = players,
     target = Date.now() + offset - buffer;
+  const special = room?.special;
+  const invisibleId = special?.phase === "invisible" ? special.hider : null;
+  const hiddenFromMe = (p) => p.id === invisibleId && special.hunter === id;
   let a = frames.findLast((f) => f.time <= target),
     b = frames.find((f) => f.time > target);
   let factor = a && b ? Math.min(1, (target - a.time) / (b.time - a.time)) : 0;
@@ -677,7 +774,9 @@ function render(now) {
           };
     const figure = figures[index++];
     if (!figure) continue;
-    figure.group.visible = active && p.hp > 0 && p.id !== view?.id;
+    figure.playerId = p.id;
+    figure.group.visible =
+      active && p.hp > 0 && p.id !== view?.id && !hiddenFromMe(p);
     figure.group.position.set(pose.x, pose.y, pose.z);
     figure.group.rotation.y = pose.yaw;
     figure.group.scale.set(1, pose.crouched ? 0.64 : 1, 1);
@@ -689,49 +788,73 @@ function render(now) {
           speed > 0.002 ? Math.sin(figure.stride + n * Math.PI) * 0.45 : 0),
     );
     const armed = room?.players.find((q) => q.id === p.id)?.role === "hunter";
+    const hasTorch = room?.torch?.owner === p.id;
     figure.arms.forEach((arm, n) => {
       arm.rotation.x =
-        armed && n === 1
+        (armed && n === 1) || (hasTorch && n === 0)
           ? -1.25
           : speed > 0.002
             ? -Math.sin(figure.stride + n * Math.PI) * 0.25
             : 0;
-      arm.position.y = armed && n === 1 ? 1.35 : 1.13;
-      arm.position.z = armed && n === 1 ? -0.22 : 0;
+      arm.position.y =
+        (armed && n === 1) || (hasTorch && n === 0) ? 1.35 : 1.13;
+      arm.position.z = (armed && n === 1) || (hasTorch && n === 0) ? -0.22 : 0;
     });
     figure.lastX = pose.x;
     figure.lastZ = pose.z;
     if (
       active &&
       p.id !== id &&
-      canMove() &&
-      speed > 0.005 &&
-      now - (figure.lastStep || 0) > (p.keys & 16 ? 270 : 420)
+      mayMove(room, { ...p, role: armed ? "hunter" : "hider" }) &&
+      speed > 0.002
     ) {
-      const distance = Math.hypot(pose.x - local.x, pose.z - local.z);
-      if (distance < 12) {
-        const pan =
-          ((pose.x - local.x) * Math.cos(yaw) -
-            (pose.z - local.z) * Math.sin(yaw)) /
-          Math.max(1, distance);
-        noiseSound(0.15, 0.3 * Math.pow(1 - distance / 12, 2), 750, pan);
-      }
-      figure.lastStep = now;
+      sounds.footstep(p.id, speed, {
+        role: armed ? "hunter" : "hider",
+        own: false,
+        sprinting: speed / delta > 4.7,
+        crouched: !!p.crouched,
+        position: pose,
+        listener: local,
+        yaw,
+      });
     }
     const gun = gunPosition(pose, 0.52);
     figure.gun.position.set(gun.x, gun.y, gun.z);
     figure.gun.rotation.order = "YXZ";
     figure.gun.rotation.set(pose.pitch, pose.yaw, 0);
+    const specialGun =
+      special?.hunter === p.id && special.phase !== "invisible";
+    figure.specialGun.position.copy(figure.gun.position);
+    figure.specialGun.rotation.copy(figure.gun.rotation);
     figure.gun.visible =
       active &&
       !room?.borrowed &&
       p.hp > 0 &&
       room?.players.find((q) => q.id === p.id)?.role === "hunter";
+    figure.gun.visible &&= !specialGun && !hiddenFromMe(p);
+    figure.specialGun.visible = active && specialGun && p.hp > 0;
+    // A held torch is an object, not an additional light source or beam.
+    figure.torch.position.set(
+      pose.x - Math.cos(pose.yaw) * 0.32 - Math.sin(pose.yaw) * 0.35,
+      pose.y + (pose.crouched ? 0.8 : 1.3),
+      pose.z + Math.sin(pose.yaw) * 0.32 - Math.cos(pose.yaw) * 0.35,
+    );
+    figure.torch.rotation.y = pose.yaw;
+    figure.torch.visible =
+      active &&
+      hasTorch &&
+      p.hp > 0 &&
+      !hiddenFromMe(p) &&
+      !(special && special.phase !== "invisible" && view?.id === p.id);
   }
   for (let n = index; n < figures.length; n++) {
     figures[n].group.visible = false;
     figures[n].gun.visible = false;
+    figures[n].specialGun.visible = false;
+    figures[n].torch.visible = false;
   }
+  pickupTorch.visible = active && !!room?.torch && !room.torch.owner;
+  if (room?.torch) pickupTorch.position.set(room.torch.x, 0.3, room.torch.z);
   if (active && view) {
     const isBorrowed = !!room.borrowed && room.stage === "search";
     if (isBorrowed !== borrowedCamera) {
@@ -753,6 +876,11 @@ function render(now) {
     );
     camera.rotation.y = own ? yaw : lookYaw;
     camera.rotation.x = own ? pitch : lookPitch;
+    if (special && special.phase !== "invisible") {
+      camera.position.set(special.camera.x, special.camera.y, special.camera.z);
+      camera.rotation.y = specialSetting() ? lookYaw : special.camera.yaw;
+      camera.rotation.x = specialSetting() ? lookPitch : special.camera.pitch;
+    }
     const desiredFov = 75;
     if (camera.fov !== desiredFov) {
       camera.fov = desiredFov;
@@ -791,8 +919,14 @@ function render(now) {
         "borrowed",
         !own && room.stage === "search",
       );
+      document.body.classList.toggle("special", !!special);
       const untilEnd = room.stage === "search" ? room.end : room.stageEnd;
-      const clockNow = room.pausedAt || Date.now() + offset;
+      const clockNow =
+        special?.startedAt || room.pausedAt || Date.now() + offset;
+      const branchNow = room.pausedAt || Date.now() + offset;
+      const branchLeft = special
+        ? Math.max(0, Math.ceil((special.phaseEnd - branchNow) / 1000))
+        : 0;
       const left = Math.max(0, Math.ceil((untilEnd - clockNow) / 1000));
       $("timer").classList.toggle(
         "urgent",
@@ -802,6 +936,7 @@ function render(now) {
         Math.floor(left / 60) + ":" + String(left % 60).padStart(2, "0");
       const count = Math.max(0, Math.ceil((room.swapAt - clockNow) / 1000));
       if (
+        !special &&
         room.stage === "search" &&
         count <= 3 &&
         count > 0 &&
@@ -811,8 +946,9 @@ function render(now) {
         lastCountdown = count;
       }
       if (count > 3) lastCountdown = 4;
-      $("countdown").textContent =
-        room.stage === "search"
+      $("countdown").textContent = special
+        ? `MATCH CLOCK PAUSED · ${special.phase === "setup" ? "CHOOSE VIEW" : special.phase === "action" ? "LOCKED VIEW" : "INVISIBILITY"} · ${branchLeft}s`
+        : room.stage === "search"
           ? (room.borrowed ? "YOUR EYES RETURN IN " : "NEXT REVEAL · ") +
             count +
             "s"
@@ -820,7 +956,11 @@ function render(now) {
             ? "THE HUNT BEGINS IN " + left + "s"
             : "";
       const warning =
-        room.stage === "search" && !room.borrowed && count <= 3 && count > 0;
+        !special &&
+        room.stage === "search" &&
+        !room.borrowed &&
+        count <= 3 &&
+        count > 0;
       $("swapNumber").textContent = warning ? count : "";
       document.body.style.setProperty(
         "--swap-progress",
@@ -845,8 +985,15 @@ function render(now) {
       $("weapon").textContent =
         myRole() === "hider" ? "UNARMED · STAY HIDDEN" : "";
       $("ammo").textContent =
-        myRole() === "hider" ? "STAY HIDDEN" : (me?.ammo || 0) + " / 6 ROUNDS";
-      $("ammoIcons").classList.toggle("hidden", myRole() === "hider");
+        myRole() === "hider"
+          ? "STAY HIDDEN"
+          : special && special.phase !== "invisible"
+            ? "SPECIAL · 1 SHOT"
+            : (me?.ammo || 0) + " / 20 ROUNDS";
+      $("ammoIcons").classList.toggle(
+        "hidden",
+        myRole() === "hider" || (special && special.phase !== "invisible"),
+      );
       ammoIcons.forEach((icon, n) =>
         icon.classList.toggle("spent", n >= me.ammo),
       );
@@ -876,6 +1023,40 @@ function render(now) {
       else if (hunterBoost(room, { role: myRole() }, clockNow))
         $("objective").textContent =
           "LAST LIGHT · Speed +10% · Illumination +15%";
+      if (special) {
+        $("viewlabel").textContent =
+          special.phase === "invisible"
+            ? myRole() === "hider"
+              ? "INVISIBLE · MOVE"
+              : "YOUR EYES · HIDER INVISIBLE"
+            : special.phase === "setup"
+              ? "HIDER'S EYES · CHOOSING VIEW"
+              : "SECOND-PERSON · VIEW LOCKED";
+        $("objective").textContent =
+          special.phase === "setup"
+            ? special.hunter === id
+              ? "Mouse to choose their view · Your body is still · Locks automatically"
+              : "The hunter controls your eyes · All controls frozen"
+            : special.phase === "action"
+              ? special.hunter === id
+                ? "WASD to move · Mouse to aim your gun · Left click fires your one special shot"
+                : "Your eyes are locked · The hunter is moving · Hold on"
+              : "Hider invisible and able to move · Damage still applies · Match clock and swaps remain paused";
+      }
+      $("specialActivate").classList.toggle(
+        "hidden",
+        !specialAvailable() || room.paused,
+      );
+      $("torchStatus").textContent =
+        room.torch?.owner === id ? "TORCH HELD · SIGHT +15%" : "";
+      $("specialStatus").textContent =
+        room.round === 3
+          ? "SPECIAL UNAVAILABLE IN ROUND 3"
+          : myRole() === "hunter"
+            ? myPlayer()?.specialUsed
+              ? "SPECIAL USED THIS ROUND"
+              : "SPECIAL READY · GET WITHIN 3m IN THE SAME ROOM"
+            : "";
       currentInteraction = null;
       $("interaction").textContent = "";
       if (canMove() && me.hp > 0) {
@@ -900,6 +1081,11 @@ function render(now) {
           currentInteraction = name;
           break;
         }
+        if (canTakeTorch(room, { ...local, id })) {
+          currentInteraction = "torch";
+          $("interaction").textContent =
+            "[E] Take the torch · Sight +15% for this round";
+        }
       }
     }
   } else {
@@ -907,16 +1093,14 @@ function render(now) {
     camera.rotation.set(-0.03, Math.sin(now * 0.00008) * 0.12, 0);
     $("waiting").classList.add("hidden");
     document.body.classList.remove("borrowed");
+    document.body.classList.remove("special");
   }
-  const clockNow = room?.pausedAt || Date.now() + offset;
+  const clockNow = special?.startedAt || room?.pausedAt || Date.now() + offset;
   const warning =
-    active && room?.stage === "search" && !room.borrowed
+    active && room?.stage === "search" && !room.borrowed && !special
       ? Math.max(0, 1 - (room.swapAt - clockNow) / 3000)
       : 0;
-  const boost =
-    active && room && hunterBoost(room, { role: myRole() }, clockNow)
-      ? 1.15
-      : 1;
+  const boost = active && room ? visibilityScale(room, view?.id, clockNow) : 1;
   lantern.distance = 11 * boost * (1 - warning * 0.78);
   lantern.intensity = 28 * (1 - warning * 0.55);
   lantern.color.setHex(warning && myRole() === "hider" ? 0xd94936 : 0xffdab0);
@@ -929,7 +1113,9 @@ function render(now) {
     myRole() === "hider" ? "#390b13" : "#070914",
   );
   $("iris").style.setProperty("--iris-opacity", warning);
-  details.update(now, room, clockNow);
+  details.update(now, room, room?.pausedAt || Date.now() + offset);
+  sounds.update(now);
+  interfaceView.updateRoom(local, room?.round, room?.stage);
   lantern.position.copy(camera.position);
   lantern.position.y += 0.15;
   if (now - lastDebug >= 200) {
@@ -959,14 +1145,27 @@ function render(now) {
       lastAck: me?.seq,
       viewId: view?.id,
       borrowed: !!room?.borrowed,
-      visibleBodyIds: [...players.values()]
-        .filter((p) => p.hp > 0 && !p.spectator && p.id !== view?.id)
-        .map((p) => p.id),
+      visibleBodyIds: figures
+        .filter((figure) => figure.group.visible)
+        .map((figure) => figure.playerId),
+      visibleTorchIds: figures
+        .filter((figure) => figure.torch.visible)
+        .map((figure) => figure.playerId),
       stage: room?.stage,
       round: room?.round,
       role: myRole(),
       cycle: room?.cycle,
       ammo: me?.ammo,
+      specialPhase: special?.phase || null,
+      specialUsed: !!myPlayer()?.specialUsed,
+      specialAvailable: specialAvailable(),
+      torchOwner: room?.torch?.owner || null,
+      visibilityScale: boost,
+      invisibleId,
+      cameraPitch: camera.rotation.x,
+      sound: sounds.status(),
+      interface: { ...interfaceView.stats },
+      cat: details.catPose,
       hp: me?.hp,
       points: room?.players.map((p) => p.points),
       drawCalls: renderer.info.render.calls,
@@ -974,8 +1173,74 @@ function render(now) {
     });
   }
   effects.update(delta);
-  if (active) camera.rotation.z = (Math.random() - 0.5) * effects.shake;
+  if (active)
+    camera.rotation.z =
+      special && special.phase !== "invisible"
+        ? 0
+        : (Math.random() - 0.5) * effects.shake;
+  updateReticle(me);
   renderer.render(scene, camera);
   requestAnimationFrame(render);
+}
+function updateReticle(me) {
+  const crosshair = $("crosshair"),
+    s = room?.special;
+  crosshair.style.left = "50%";
+  crosshair.style.top = "50%";
+  if (s?.phase !== "action" || s.hunter !== id || !me) {
+    crosshair.style.opacity =
+      active && room?.stage === "search" && canMove() && myRole() === "hunter"
+        ? ".7"
+        : "0";
+    return;
+  }
+  const origin = gunPosition({ ...local, yaw, pitch });
+  const direction = new THREE.Vector3(
+    -Math.sin(yaw) * Math.cos(pitch),
+    Math.sin(pitch),
+    -Math.cos(yaw) * Math.cos(pitch),
+  );
+  let distance = 40;
+  for (const [x, z, w, d, h] of maps[2])
+    distance = Math.min(
+      distance,
+      rayBox(
+        origin.x,
+        origin.y,
+        origin.z,
+        direction.x,
+        direction.y,
+        direction.z,
+        [x - w, 0, z - d],
+        [x + w, h, z + d],
+      ),
+    );
+  for (const p of players.values())
+    if (p.id !== id && p.hp > 0)
+      distance = Math.min(
+        distance,
+        rayBox(
+          origin.x,
+          origin.y,
+          origin.z,
+          direction.x,
+          direction.y,
+          direction.z,
+          [p.x - 0.4, p.y, p.z - 0.4],
+          [p.x + 0.4, p.y + (p.crouched ? 1.15 : 1.8), p.z + 0.4],
+        ),
+      );
+  camera.updateMatrixWorld();
+  const point = new THREE.Vector3(origin.x, origin.y, origin.z)
+    .addScaledVector(direction, distance)
+    .project(camera);
+  const visible =
+    point.z >= -1 &&
+    point.z <= 1 &&
+    Math.abs(point.x) <= 1 &&
+    Math.abs(point.y) <= 1;
+  crosshair.style.opacity = visible ? ".9" : "0";
+  crosshair.style.left = `${(point.x + 1) * 50}%`;
+  crosshair.style.top = `${(1 - point.y) * 50}%`;
 }
 requestAnimationFrame(render);

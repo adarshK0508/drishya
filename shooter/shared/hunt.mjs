@@ -4,8 +4,16 @@ export const RULES = Object.freeze({
   reveal: 7000,
   cycles: 5,
   intermission: 3000,
-  ammo: 6,
+  ammo: 20,
 });
+export const SPECIAL = Object.freeze({
+  range: 3,
+  setup: 3000,
+  action: 3000,
+  invisible: 5000,
+  damage: 70,
+});
+export const TORCH = Object.freeze({ range: 1.8, boost: 1.15 });
 export const SEARCH_MS = (RULES.own + RULES.reveal) * RULES.cycles;
 export function huntPhase(start, now) {
   const elapsed = Math.max(0, now - start);
@@ -31,6 +39,9 @@ export function mayMove(room, player) {
   return (
     !room.pausedAt &&
     !room.borrowed &&
+    (!room.special ||
+      room.special.phase === "invisible" ||
+      (room.special.phase === "action" && room.special.hunter === player.id)) &&
     player.hp > 0 &&
     (room.stage === "search" ||
       (room.stage === "hide" && player.role === "hider"))
@@ -40,12 +51,16 @@ export function mayFire(room, player) {
   return (
     !room.pausedAt &&
     !room.borrowed &&
+    (!room.special ||
+      room.special.phase === "invisible" ||
+      (room.special.phase === "action" && room.special.hunter === player.id)) &&
     room.stage === "search" &&
     player.hp > 0 &&
     player.role === "hunter"
   );
 }
 export function hunterBoost(room, player, now) {
+  now = room.special?.startedAt ?? now;
   return (
     room.stage === "search" &&
     player.role === "hunter" &&

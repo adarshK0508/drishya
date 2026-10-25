@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+ <defs>
+  <filter id="wear"><feTurbulence type="fractalNoise" baseFrequency=".08 .55" numOctaves="3" seed="13"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="linear" slope=".5"/><feFuncG type="linear" slope=".13"/><feFuncB type="linear" slope=".12"/><feFuncA type="linear" slope=".38"/></feComponentTransfer><feBlend in="SourceGraphic" mode="soft-light"/></filter>
+  <radialGradient id="blood"><stop stop-color="#641d25"/><stop offset=".6" stop-color="#36141a"/><stop offset="1" stop-color="#170e11"/></radialGradient>
+ </defs>
+ <path fill="url(#blood)" filter="url(#wear)" d="M0 0h1200v900H0z"/>
+ <g fill="none" stroke="#bc7363" stroke-opacity=".2" stroke-width=".7">
+  <path d="m0 90 375 16m-95-80 160 285M120 0l40 390M0 600l380-90m-300 45 710-140M350 900l90-395m45 65 310-490m-375 350 630-270M860 0l-55 320m195-140 200-60m-220 480 220-105M500 890l580-90M960 510l115 390M100 845l630-250"/>
+  <path d="m10 94 160 5m103-80 140 250M140 0l40 380m210 100 340-135m-290 545 70-340m210-290 91-160m30 743 370-8"/>
+ </g>
+ <g fill="#9d1b25" opacity=".13"><ellipse cx="1030" cy="630" rx="240" ry="25" transform="rotate(-25 1030 630)"/><ellipse cx="290" cy="280" rx="90" ry="220" transform="rotate(46 290 280)"/><circle cx="780" cy="100" r="6"/><circle cx="750" cy="125" r="3"/></g>
+</svg>

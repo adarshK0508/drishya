@@ -287,6 +287,41 @@ export function buildMansion(scene) {
   return group;
 }
 
+export function createTorch() {
+  const group = new THREE.Group();
+  const copper = new THREE.MeshStandardMaterial({
+    color: 0x8a6841,
+    metalness: 0.65,
+    roughness: 0.7,
+  });
+  const dark = new THREE.MeshStandardMaterial({
+    color: 0x222b30,
+    roughness: 0.85,
+  });
+  const glass = new THREE.MeshStandardMaterial({
+    color: 0xd7cba0,
+    emissive: 0x33270f,
+    emissiveIntensity: 0.3,
+    roughness: 0.5,
+  });
+  const handle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.035, 0.04, 0.32, 8),
+    dark,
+  );
+  const head = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.075, 0.05, 0.12, 8),
+    copper,
+  );
+  head.position.y = 0.19;
+  const lens = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.058, 0.058, 0.012, 8),
+    glass,
+  );
+  lens.position.y = 0.255;
+  group.add(handle, head, lens);
+  return group;
+}
+
 export function createFigure(scene, index) {
   const group = new THREE.Group();
   scene.add(group);
@@ -381,5 +416,35 @@ export function createFigure(scene, index) {
       gun.add(scratch);
     }
   }
-  return { group, legs, arms, gun, lastX: 0, lastZ: 0, stride: 0 };
+  const specialGun = new THREE.Group();
+  const specialMetal = new THREE.MeshStandardMaterial({
+    color: 0x8b6949,
+    metalness: 0.7,
+    roughness: 0.45,
+  });
+  const specialBarrel = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.15, 0.62),
+    specialMetal,
+  );
+  specialBarrel.position.z = -0.08;
+  const specialGrip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.25, 0.14),
+    dark,
+  );
+  specialGrip.position.set(0, -0.15, 0.15);
+  specialGun.add(specialBarrel, specialGrip);
+  scene.add(specialGun);
+  const torch = createTorch();
+  scene.add(torch);
+  return {
+    group,
+    legs,
+    arms,
+    gun,
+    specialGun,
+    torch,
+    lastX: 0,
+    lastZ: 0,
+    stride: 0,
+  };
 }

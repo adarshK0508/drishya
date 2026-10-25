@@ -168,7 +168,7 @@ test("authoritative two-player match: hiding lock, live reveals, limited ammo, r
       grenade: true,
     });
     assert.equal(A.z, az);
-    assert.equal(A.ammo[0], 6);
+    assert.equal(A.ammo[0], 20);
     assert.notEqual(B.z, bz);
     assert.equal(B.ammo[0], 0);
     assert.equal(B.weapon, 0);
@@ -187,7 +187,7 @@ test("authoritative two-player match: hiding lock, live reveals, limited ammo, r
     await input(B, { keys: 1, fire: true });
     assert.equal(A.z, old);
     assert.equal(B.z, otherOld);
-    assert.equal(A.ammo[0], 6);
+    assert.equal(A.ammo[0], 20);
     assert.equal(r.end, end, "swap never extends the round clock");
     Object.assign(B, { x: 8, z: -19 });
     send(b.ws, { type: "interact", target: "portrait" });
@@ -218,12 +218,13 @@ test("authoritative two-player match: hiding lock, live reveals, limited ammo, r
     send(b.ws, { type: "interact", target: "toilet" });
     await flush();
     assert.equal(r.flushed, true);
-    // Reset in clear hallway; six deliberately missed shots must end the round.
+    // Reset in clear hallway; after spending the special, 20 misses end the round.
+    A.specialUsed = true;
     A.x = 0;
     A.z = 18;
     B.x = 10;
     B.z = 10;
-    for (let n = 0; n < 6; n++) {
+    for (let n = 0; n < 20; n++) {
       now += 700;
       await input(A, { fire: true, reload: true, weapon: 3 });
     }
@@ -236,11 +237,30 @@ test("authoritative two-player match: hiding lock, live reveals, limited ammo, r
     assert.equal(r.round, 2);
     assert.equal(A.role, "hider");
     assert.equal(B.role, "hunter");
-    assert.equal(B.ammo[0], 6);
+    assert.equal(r.catAt, 0, "cat resets for each new round");
+    assert.equal(B.ammo[0], 20);
     assert.equal(A.ammo[0], 0);
     assert.equal(B.teleportUsed, true, "round change preserves spent passage");
     now = r.startedAt;
     step(now);
+    Object.assign(A, { x: 5, z: 8 });
+    now++;
+    step(now);
+    assert.equal(
+      r.catAt,
+      now,
+      "first room entry triggers cat even far from the bed",
+    );
+    const firstCatAt = r.catAt;
+    Object.assign(A, { x: 0, z: 8 });
+    step(++now);
+    Object.assign(A, { x: 5, z: 8 });
+    step(++now);
+    assert.equal(
+      r.catAt,
+      firstCatAt,
+      "cat does not retrigger within the same round",
+    );
     now = r.end;
     step(now);
     assert.equal(A.points, 1);
@@ -268,11 +288,13 @@ test("authoritative two-player match: hiding lock, live reveals, limited ammo, r
     now += 700;
     await input(A, { fire: true, pitch: 0.06 });
     assert.equal(B.hp, 100);
-    assert.equal(A.ammo[0], 6);
+    assert.equal(A.ammo[0], 20);
     now = r.startedAt + 27000;
     step(now);
-    now += 700;
-    await input(A, { fire: true, pitch: 0.06 });
+    for (let shot = 0; shot < 7; shot++) {
+      now += 700;
+      await input(A, { fire: true, pitch: 0.06 });
+    }
     assert.equal(B.hp, 0);
     assert.equal(A.points, 2);
     assert.equal(r.stage, "intermission");

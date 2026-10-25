@@ -1,5 +1,6 @@
 import * as THREE from "./vendor/three.module.js";
 import { mansionRooms } from "/shared/mansion.mjs";
+import { catPose } from "/shared/cat.mjs";
 
 export function buildDetails(scene) {
   const existing = new Set(scene.children);
@@ -274,18 +275,24 @@ export function buildDetails(scene) {
   const cat = new THREE.Group();
   scene.add(cat);
   cat.position.set(12, 0.98, 14);
-  const fur = new THREE.MeshStandardMaterial({ color: 0x837e72, roughness: 1 });
+  const fur = new THREE.MeshStandardMaterial({
+    color: 0x837e72,
+    roughness: 1,
+    transparent: true,
+  });
+  const catEyes = dark.clone();
+  catEyes.transparent = true;
   ellipsoid(0, 0.13, 0, 0.43, 0.2, 0.25, fur, cat);
   ellipsoid(-0.3, 0.22, -0.12, 0.19, 0.18, 0.17, fur, cat);
-  for (const x of [-0.41, -0.21])
-    mesh(new THREE.ConeGeometry(0.075, 0.18, 3), fur, x, 0.41, -0.12, cat);
-  for (const x of [-0.38, -0.24]) {
+  for (const z of [-0.23, -0.01])
+    mesh(new THREE.ConeGeometry(0.075, 0.18, 3), fur, -0.3, 0.41, z, cat);
+  for (const z of [-0.19, -0.05]) {
     const eye = mesh(
-      new THREE.BoxGeometry(0.055, 0.012, 0.015),
-      dark,
-      x,
+      new THREE.BoxGeometry(0.015, 0.018, 0.055),
+      catEyes,
+      -0.475,
       0.24,
-      -0.275,
+      z,
       cat,
     );
     eye.rotation.z = 0.12;
@@ -351,27 +358,24 @@ export function buildDetails(scene) {
       swirl.rotation.z = f * 15;
       swirl.visible = f > 0 && f < 1;
       const t = world?.catAt ? Math.max(0, (clockNow - world.catAt) / 1000) : 0;
-      if (!t) {
-        cat.position.set(12, 0.98 + Math.sin(now * 0.002) * 0.012, 14);
-        cat.rotation.y = 0;
-        cat.visible = true;
-      } else {
-        const travel = Math.min(t * 4, 12),
-          jump = Math.min(1, t / 0.7);
-        cat.position.set(
-          12 + Math.min(travel, 4.2),
-          0.98 -
-            jump * 0.76 +
-            Math.sin(jump * Math.PI) * 0.65 +
-            Math.abs(Math.sin(t * 19)) * 0.07,
-          14 + Math.max(0, travel - 4.2) * 0.54,
-        );
-        cat.rotation.y = travel < 4.2 ? Math.PI : 2.3;
-        cat.visible = t < 4;
-        paws.forEach(
-          (p, i) => (p.position.y = Math.sin(t * 19 + i * Math.PI) * 0.09),
-        );
-      }
+      const pose = catPose(t);
+      this.catPose = pose;
+      cat.position.set(
+        pose.x,
+        pose.y + (!pose.running ? Math.sin(now * 0.002) * 0.012 : 0),
+        pose.z,
+      );
+      cat.rotation.y = pose.yaw;
+      cat.visible = pose.visible;
+      cat.scale.set(pose.running ? 1.12 : 1, pose.running ? 0.95 : 1, 1);
+      fur.opacity = pose.opacity;
+      catEyes.opacity = pose.opacity;
+      tail.rotation.z = pose.running ? -0.25 + Math.sin(t * 10) * 0.12 : 0;
+      paws.forEach((paw, i) => {
+        const phase = t * 21 + [0, Math.PI, Math.PI, 0][i];
+        paw.position.y = pose.running ? Math.max(0, Math.sin(phase)) * 0.11 : 0;
+        paw.rotation.z = pose.running ? Math.cos(phase) * 0.3 : 0;
+      });
     },
   };
 }

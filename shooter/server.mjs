@@ -27,7 +27,14 @@ import {
   mayMove,
   mayFire,
   hunterBoost,
+  SPECIAL,
 } from "./shared/hunt.mjs";
+import {
+  canActivateSpecial,
+  chooseTorch,
+  canTakeTorch,
+  roomAt,
+} from "./shared/special.mjs";
 import {
   mansionSpawns,
   interactions,
@@ -71,6 +78,61 @@ const server = http.createServer((req, res) => {
       res.writeHead(403);
       return res.end();
     }
+    const mediaType = {
+      ".mp3": "audio/mpeg",
+      ".wav": "audio/wav",
+      ".m4a": "audio/mp4",
+      ".webm": "video/webm",
+    }[path.extname(file)];
+    if (mediaType) {
+      fs.stat(file, (error, info) => {
+        if (error || !info.isFile()) {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+        let start = 0,
+          end = info.size - 1;
+        if (req.headers.range) {
+          const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
+          if (!match || (!match[1] && !match[2])) {
+            res.writeHead(416, { "Content-Range": `bytes */${info.size}` });
+            res.end();
+            return;
+          }
+          if (!match[1]) start = Math.max(0, info.size - Number(match[2]));
+          else {
+            start = Number(match[1]);
+            if (match[2]) end = Math.min(end, Number(match[2]));
+          }
+          if (
+            !Number.isSafeInteger(start) ||
+            !Number.isSafeInteger(end) ||
+            start > end ||
+            start >= info.size
+          ) {
+            res.writeHead(416, { "Content-Range": `bytes */${info.size}` });
+            res.end();
+            return;
+          }
+          res.statusCode = 206;
+          res.setHeader("Content-Range", `bytes ${start}-${end}/${info.size}`);
+        }
+        res.setHeader("Content-Type", mediaType);
+        res.setHeader("Accept-Ranges", "bytes");
+        res.setHeader("Content-Length", end - start + 1);
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        if (req.method === "HEAD") {
+          res.end();
+          return;
+        }
+        const stream = fs.createReadStream(file, { start, end });
+        stream.on("error", () => res.destroy());
+        res.on("close", () => stream.destroy());
+        stream.pipe(res);
+      });
+      return;
+    }
     fs.readFile(file, (e, data) => {
       if (e) {
         res.writeHead(404);
@@ -84,6 +146,8 @@ const server = http.createServer((req, res) => {
           ".mjs": "text/javascript",
           ".css": "text/css",
           ".png": "image/png",
+          ".svg": "image/svg+xml",
+          ".ttf": "font/ttf",
         }[path.extname(file)] || "application/octet-stream",
       );
       res.setHeader("X-Content-Type-Options", "nosniff");
@@ -134,6 +198,8 @@ function roster(r) {
     results: r.results || [],
     flushed: !!r.flushed,
     catAt: r.catAt || 0,
+    special: r.special || null,
+    torch: r.torch || null,
     players: [...r.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
@@ -144,6 +210,7 @@ function roster(r) {
       points: p.points || 0,
       connected: !!p.ws,
       teleportUsed: !!p.teleportUsed,
+      specialUsed: !!p.specialUsed,
     })),
   });
 }
@@ -161,7 +228,8 @@ function spawn(r, p, index = 0) {
     pitch: 0,
     fov: 75,
     weapon: 0,
-    ammo: [p.role === "hunter" ? RULES.ammo : 0, 0, 0, 0],
+    ammo: [p.role === "hunter" ? RULES.ammo : 0, 1, 0, 0],
+    specialUsed: false,
     reloadAt: 0,
     grenades: 0,
     view: p.id,
@@ -184,6 +252,9 @@ function beginRound(r, now) {
   r.cycle = 1;
   r.swapAt = r.startedAt + RULES.own;
   r.history = [];
+  r.special = null;
+  r.torch = chooseTorch();
+  r.catAt = 0;
   [...r.players.values()].forEach((p, i) => {
     p.role = roleFor(r.round, i);
     spawn(r, p, i);
@@ -194,14 +265,88 @@ function doSwap(r) {
   const alive = [...r.players.values()].filter((p) => p.hp > 0);
   for (const p of alive)
     p.view =
-      r.stage === "search" && r.borrowed
-        ? alive.find((q) => q.id !== p.id)?.id || p.id
-        : p.id;
+      r.special && r.special.phase !== "invisible"
+        ? r.special.hider
+        : r.stage === "search" && r.borrowed
+          ? alive.find((q) => q.id !== p.id)?.id || p.id
+          : p.id;
+}
+function clearInputs(r) {
+  r.history = [];
+  for (const p of r.players.values()) {
+    p.queue = [];
+    p.keys = 0;
+    p.inputAt = 0;
+    p.seq = p.lastSeq;
+  }
+}
+function activateSpecial(r, p, now) {
+  const hider = [...r.players.values()].find((q) => q.id !== p.id);
+  if (now >= r.end || now >= r.swapAt || !canActivateSpecial(r, p, hider))
+    return;
+  p.specialUsed = true;
+  p.weapon = 1;
+  r.special = {
+    phase: "setup",
+    hunter: p.id,
+    hider: hider.id,
+    startedAt: now,
+    phaseEnd: now + SPECIAL.setup,
+    camera: {
+      x: hider.x,
+      y: hider.y + (hider.crouched ? 0.95 : 1.5),
+      z: hider.z,
+      yaw: hider.yaw,
+      pitch: hider.pitch,
+    },
+  };
+  clearInputs(r);
+  doSwap(r);
+  roster(r);
+}
+function startEscape(r, now) {
+  if (!r.special || r.special.phase === "invisible") return;
+  r.special.phase = "invisible";
+  r.special.phaseEnd = now + SPECIAL.invisible;
+  for (const p of r.players.values()) p.weapon = 0;
+  clearInputs(r);
+  doSwap(r);
+  roster(r);
+}
+function updateSpecial(r, now) {
+  const s = r.special;
+  if (!s) return;
+  // Advance by deadlines so a late server tick never stretches a branch phase.
+  while (r.special && now >= s.phaseEnd) {
+    const boundary = s.phaseEnd;
+    if (s.phase === "setup") {
+      s.phase = "action";
+      s.phaseEnd = boundary + SPECIAL.action;
+      clearInputs(r);
+      roster(r);
+    } else if (s.phase === "action") startEscape(r, boundary);
+    else {
+      const duration = boundary - s.startedAt;
+      r.startedAt += duration;
+      r.end += duration;
+      r.swapAt += duration;
+      r.stageEnd += duration;
+      r.special = null;
+      clearInputs(r);
+      roster(r);
+    }
+  }
 }
 function finish(r, reason, forfeitWinner) {
   if (r.state !== "playing") return;
   r.state = "ended";
   r.stage = "ended";
+  r.special = null;
+  for (const p of r.players.values()) {
+    p.weapon = 0;
+    p.view = p.id;
+    p.queue = [];
+  }
   const scores = [...r.players.values()]
     .map((p) => ({
       id: p.id,
@@ -236,7 +381,9 @@ function endRound(r, winner, reason, now) {
   r.stage = "intermission";
   r.stageEnd = now + RULES.intermission;
   r.borrowed = false;
+  r.special = null;
   for (const p of r.players.values()) {
+    p.weapon = 0;
     p.view = p.id;
     p.keys = 0;
     p.queue = [];
@@ -414,7 +561,18 @@ wss.on("connection", (ws, req) => {
         return;
       }
       if (!p) return;
+      if (m.type === "special") {
+        activateSpecial(r, p, now);
+        return;
+      }
       if (m.type === "interact") {
+        if (m.target === "torch") {
+          if (r.state === "playing" && mayMove(r, p) && canTakeTorch(r, p)) {
+            r.torch.owner = p.id;
+            roster(r);
+          }
+          return;
+        }
         const target = interactions[m.target];
         if (
           !target ||
@@ -529,6 +687,11 @@ export function step(now = Date.now()) {
           r.end += pause;
           r.swapAt += pause;
           r.stageEnd += pause;
+          if (r.catAt) r.catAt += pause;
+          if (r.special) {
+            r.special.startedAt += pause;
+            r.special.phaseEnd += pause;
+          }
           r.pausedAt = 0;
           r.history = [];
           for (const p of r.players.values()) {
@@ -554,7 +717,8 @@ export function step(now = Date.now()) {
           }
           roster(r);
         }
-        if (r.stage === "search") {
+        updateSpecial(r, now);
+        if (r.stage === "search" && !r.special) {
           if (now >= r.end)
             endRound(
               r,
@@ -593,7 +757,20 @@ export function step(now = Date.now()) {
           if (i) {
             p.seq = i.seq;
             p.inputAt = now;
-            p.weapon = 0;
+            p.weapon =
+              r.special &&
+              r.special.phase !== "invisible" &&
+              r.special.hunter === p.id
+                ? 1
+                : 0;
+            if (r.special?.phase === "setup" && r.special.hunter === p.id) {
+              r.special.camera.yaw = i.yaw;
+              r.special.camera.pitch = i.pitch;
+              if (now - (r.special.lastLookAt || 0) >= 50) {
+                r.special.lastLookAt = now;
+                emit(r, { type: "specialLook", camera: r.special.camera });
+              }
+            }
             // View assignment never changes whose body this input moves or fires.
             if (mayMove(r, p)) {
               p.keys = i.keys;
@@ -608,12 +785,13 @@ export function step(now = Date.now()) {
             if (
               i.fire &&
               mayFire(r, p) &&
-              now - p.lastFire >= weapons[0].rate &&
-              p.ammo[0] > 0
+              (p.weapon === 1 || now - p.lastFire >= weapons[0].rate) &&
+              p.ammo[p.weapon] > 0
             ) {
-              const w = weapons[0];
+              const weapon = p.weapon,
+                w = weapons[weapon];
               p.lastFire = now;
-              p.ammo[0]--;
+              p.ammo[weapon]--;
               metrics.shots++;
               const rewind = Math.max(now - 200, Math.min(now, i.time - 100));
               const past = r.history.findLast((h) => h.time <= rewind)
@@ -632,7 +810,7 @@ export function step(now = Date.now()) {
               emit(r, {
                 type: "shot",
                 id: p.id,
-                weapon: 0,
+                weapon,
                 x: p.x,
                 y: p.y,
                 z: p.z,
@@ -643,8 +821,16 @@ export function step(now = Date.now()) {
               if (h) {
                 const q = r.players.get(h.id);
                 if (q?.hp > 0) {
-                  const damage = w.damage * (h.head ? 2 : 1);
+                  const damage = w.damage;
                   q.hp = Math.max(0, q.hp - damage);
+                  if (q.role === "hider")
+                    emit(r, {
+                      type: "hurt",
+                      id: q.id,
+                      role: q.role,
+                      damage,
+                      weapon,
+                    });
                   metrics.hits++;
                   send(p.ws, {
                     type: "hit",
@@ -659,6 +845,7 @@ export function step(now = Date.now()) {
                   }
                 }
               }
+              if (weapon === 1 && r.stage === "search") startEscape(r, now);
             }
           } else if (mayMove(r, p) && now - (p.inputAt || 0) < 150) {
             move(
@@ -674,17 +861,21 @@ export function step(now = Date.now()) {
           !r.catAt &&
           !r.borrowed &&
           [...r.players.values()].some(
-            (p) => mayMove(r, p) && Math.hypot(p.x - 12, p.z - 14) < 3.8,
+            (p) => mayMove(r, p) && roomAt(p) === "east-2",
           )
         ) {
           r.catAt = now;
           emit(r, { type: "cat", at: now });
         }
-        if (r.stage === "search") {
+        if (r.stage === "search" && !r.special) {
           const armed = [...r.players.values()].filter(
             (p) => p.role === "hunter",
           );
-          if (armed.every((p) => p.ammo[0] === 0))
+          if (
+            armed.every(
+              (p) => p.ammo[0] === 0 && (r.round === 3 || p.specialUsed),
+            )
+          )
             endRound(
               r,
               r.round < 3
