@@ -1,32 +1,32 @@
-# Verification — Blackthorn House
+# Verification — दृश्य
 
-Current checks run with Node 24.13 and Playwright Chromium on Windows.
+Verified on Windows with Node 24.13 and Playwright Chromium.
 
-## Automated coverage
+## Automated results
 
-`npm test` runs 15 unit/server tests plus a two-browser integration check.
+All 16 unit/server tests pass. The two-browser integration test passes with no browser JavaScript or console errors. The browser fixture advances server deadlines to exercise the match quickly; exact timing is covered by the server tests.
 
-- Binary inputs and snapshots, quantization, input rejection, muzzle ownership and shared collision tests.
-- Exact boundaries of all five 20-second / 7-second reveal cycles (135 seconds search).
-- Flood-fill reachability of all six rooms and all spawn positions using the actual movement collision geometry.
-- Admission requires two players; capacity is two. Ready checks, reconnect tokens and host migration.
-- Hunter cannot move or fire during hiding; hider can move but cannot obtain a weapon by forging inputs.
-- Live asymmetric reveal assignment; hunter can move their own body while viewing the hider.
-- Six shots total, ignored reloads/weapon switching/grenades, early survival on ammo exhaustion.
-- Survival on timeout, round-two role reversal, round-three reciprocal swaps, and a kill from the shooter's body during borrowed POV.
-- Match scoring, three-round completion, rematch reset, disconnect pause/resume and forfeits.
-- Browser HUD, hiding blackout, unarmed display, role transition, results, draw and return to lobby. No browser JavaScript/console errors in the completed run.
+Coverage includes:
 
-The browser fixture advances server deadlines to exercise the entire match quickly. It places players in the library for screenshots and character visibility, and uses actual keyboard events for movement. The concurrent-client test dispatches the join button directly for deterministic setup. A separate Chromium check also passed with a physical mouse click on the menu join button.
+- Exact boundaries of five 20-second / 7-second cycles and the 135-second hunt.
+- Both players exchanging viewpoints while movement, shooting and interactions are blocked server-side.
+- Independent mouse rotation at the opponent's position, frozen physical aim, and restoration of original aim.
+- No extension to the round deadline during swaps; 3-second round intermissions.
+- Hunter waiting lock, hider movement, six-shot limits, ignored reload/weapon/grenade attempts, damage, role reversal, final duel and match results.
+- Hider-only, proximity-checked portrait passage; one use across rounds and reset on rematch. Real E-key activation is exercised in-browser.
+- Toilet interaction and flush state, health bar/value updates, authoritative cat proximity, and the hider's red shrinking-vision warning.
+- Last-10-second boost boundaries and hunter-only client prediction.
+- Room reachability using actual collision geometry, admission rules, reconnect and disconnect forfeit.
+- Hindi entrance, newspaper navigation, compact settings, round-result card and return to lobby.
 
-## Rendering
+The visual fixture `node test/visuals.mjs` captures the actual rendered rooms and checks that settings require no scrolling at 1280×800, 960×600 and 1366×768.
 
-Observed 5,198 triangles and 52 draw calls in the completed run. Static geometry is instanced by material, characters share per-figure materials, and effects use a fixed pool. Only one point light is active, without shadow maps. Quality automatically drops to a 0.55 pixel ratio under sustained low FPS.
+## Rendering and limits
 
-A two-client software-rendered Chromium run reported roughly 25 FPS on the last sampled frame. This is not a gaming-GPU benchmark or a guarantee of performance on other machines. F3 shows current FPS and network diagnostics.
+The completed two-client software-rendered run sampled 67 draw calls and 22,654 triangles, at approximately 18 FPS. This is a software-rendering measurement under concurrent browser load, not a hardware-GPU benchmark. Static repeated furnishings are instanced by material and geometry; quality reduces resolution under sustained low FPS.
 
-Screenshots: `docs/mansion-menu.png`, `docs/mansion-library.png`, `docs/mansion-borrowed.png`. Machine-readable browser output is written to ignored `test-results/mansion-browser.json`.
+Audio is implemented with Web Audio: filtered footstep transients, attenuated/panned nearby opponent steps, flushing, ambient drone and cues. Automated Chromium runs mute hardware output; headphone listening still needs a human check.
 
-## Remaining playtest questions
+No real two-laptop network session or human balance study was performed. The approved 10% hunter speed and 15% illumination boosts are deliberately modest; hider win rates still require playtesting. Furniture uses conservative collision boxes, so players cannot crawl under tables.
 
-Human play is still needed to tune map knowledge, six-shot pressure, darkness, and the hider's ability to suppress useful location clues. Audio currently provides a synthetic ambience, local footsteps and gun cues; it does not yet implement directional opponent footsteps. Furniture uses conservative solid collision boxes, so tables provide cover but cannot be crawled beneath. No Internet deployment or real two-laptop LAN session was performed for this revision. Historical arena soak files and screenshots are not evidence for the mansion revision.
+Current screenshots are in `docs/drishya-*.png`; tutorial images are local gameplay screenshots in `public/assets/guide-*.png`. Detailed test output is written to ignored `test-results/mansion-browser.json`. Legacy arena and earlier POV scripts describe historical mechanics only.

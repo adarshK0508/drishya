@@ -3,60 +3,156 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta name="theme-color" content="#080b0b" />
+    <meta name="theme-color" content="#101320" />
     <link rel="icon" href="data:," />
-    <title>PARALLAX — Blackthorn House</title>
+    <title>दृश्य</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <canvas id="game" aria-label="Blackthorn mansion game"></canvas>
+    <canvas id="game" aria-label="Drishya mansion game"></canvas>
     <div class="grain"></div>
     <div class="vignette"></div>
+    <div id="iris"></div>
     <main id="menu">
       <nav>
-        <b>PARALLAX<span class="brand-dot">◆</span></b
-        ><span>BLACKTHORN HOUSE / CHAPTER 01</span
-        ><button id="help" class="ghost">HOW TO PLAY ↗</button>
+        <span>AN EXPERIMENT IN BORROWED SIGHT</span
+        ><span>PRIVATE RESIDENCE · NO VISITORS AFTER DARK</span>
       </nav>
       <section class="hero">
-        <p class="eyebrow">A TWO-PLAYER GAME OF HIDE & HUNT</p>
-        <h1>The house has<br />someone else’s<br /><em>eyes.</em></h1>
-        <p class="intro">
-          Hide in its shadows. Borrow their sight.<br />Six bullets. Three
-          rounds. One way out.
+        <p class="eyebrow">TWO STRANGERS. ONE HOUSE. WHOSE EYES?</p>
+        <h1 lang="hi">दृश्य</h1>
+        <p class="tagline">
+          The house lends you its eyes.<br /><em
+            >It never promises what you’ll see.</em
+          >
         </p>
-        <div class="join">
+        <div class="entry-actions">
+          <button id="enter">ENTER THE HOUSE <span>↗</span></button
+          ><button id="help" class="ghost">HOW TO PLAY</button>
+        </div>
+        <p class="entry-warning">
+          Enter at your own risk. Leave nothing of yourself behind.
+        </p>
+        <div id="entryForm" class="join hidden">
           <label
             >YOUR NAME<input
               id="name"
               maxlength="18"
               placeholder="Stranger"
               value="Stranger"
-              autocomplete="off" /></label
-          ><label
-            >ROOM CODE <span>optional</span
+              autocomplete="off"
+          /></label>
+          <label
+            >ROOM CODE <span>leave blank to host</span
             ><input
               id="code"
               maxlength="4"
               placeholder="NEW ROOM"
-              autocomplete="off" /></label
-          ><button id="join">ENTER THE HOUSE <span>↗</span></button>
+              autocomplete="off"
+          /></label>
+          <button id="join">OPEN THE DOORS ↗</button>
         </div>
         <p id="status" role="status">
-          2 PLAYERS · SAME SERVER / LOCAL NETWORK · HEADPHONES RECOMMENDED
+          TWO PLAYERS · CONNECT TO THE SAME NETWORK · HEADPHONES RECOMMENDED
         </p>
       </section>
       <aside class="house-note">
-        <span>EST. 1893</span>
-        <p>Some rooms<br />remember you.</p>
-        <i>51° 28′ N &nbsp; / &nbsp; 00° 07′ W</i>
+        <span>THE HOUSE KEEPS NO GUEST BOOK</span>
+        <p>Only witnesses.</p>
+        <i>LOOK CLOSELY. REMEMBER EVERYTHING.</i>
       </aside>
       <footer>
-        <span>01 &nbsp; HIDE</span><span>02 &nbsp; HUNT</span
-        ><span>03 &nbsp; FACE EACH OTHER</span
-        ><span class="footer-note">DON’T TRUST WHAT YOU SEE.</span>
+        <span>01 / DISAPPEAR</span><span>02 / BORROW THEIR SIGHT</span
+        ><span>03 / RETURN TO YOURSELF</span>
       </footer>
     </main>
+    <section id="tutorial" class="hidden newspaper" aria-label="How to play">
+      <div class="paper-top">
+        <span>THE RESIDENCE CHRONICLE · SPECIAL EDITION</span
+        ><button id="home" class="ghost">← HOME SCREEN</button>
+      </div>
+      <h2>A house with borrowed eyes.</h2>
+      <p class="paper-deck">
+        A field guide for the two people foolish enough to enter.
+      </p>
+      <div class="paper-columns">
+        <article>
+          <figure>
+            <img
+              src="/assets/guide-hide.png"
+              alt="Furniture and hiding places inside the mansion"
+            />
+            <figcaption>
+              FIG. I — Put a room between yourself and danger.
+            </figcaption>
+          </figure>
+          <h3>First, disappear.</h3>
+          <p>
+            Connect two computers to the same network. Open the host’s server
+            address, enter the same room code, and both select Ready. The host
+            opens the doors.
+          </p>
+          <p>
+            The hider has 20 seconds to find cover while the hunter waits. Move
+            with <b>WASD</b>, sprint with <b>Shift</b>, crouch with <b>Ctrl</b>.
+            Listen for footsteps.
+          </p>
+        </article>
+        <article>
+          <figure>
+            <img
+              src="/assets/guide-swap.png"
+              alt="Borrowed vision with a countdown and frozen players"
+            />
+            <figcaption>
+              FIG. II — Seven seconds in a stranger’s place.
+            </figcaption>
+          </figure>
+          <h3>Then, borrow their sight.</h3>
+          <p>
+            After every 20 seconds of hunting, a <b>3 → 2 → 1</b> warning closes
+            your vision. Both players exchange viewpoints for <b>7 seconds</b>.
+            Use the mouse to inspect their surroundings.
+          </p>
+          <p>
+            Both bodies freeze. No shooting or interactions. The round clock
+            keeps running. When your own eyes return, movement and shooting
+            resume. Five cycles make a 135-second hunt.
+          </p>
+        </article>
+        <article>
+          <figure>
+            <img
+              src="/assets/guide-portrait.png"
+              alt="The portrait at the far end of the corridor"
+            />
+            <figcaption>
+              FIG. III — Some portraits are doors. One journey only.
+            </figcaption>
+          </figure>
+          <h3>Finally, survive.</h3>
+          <p>
+            The hunter has six bullets: <b>left click</b> to shoot. Two body
+            hits or one headshot ends the hunt. The hider wins by surviving or
+            exhausting the hunter’s ammunition.
+          </p>
+          <p>
+            Press <b>E</b> at the bathroom portrait: hiders get one escape per
+            player per match. E also flushes the toilet. Approach the bedroom
+            cat quietly—or watch it flee.
+          </p>
+          <p>
+            Roles reverse in round two; both hunt in round three. Most round
+            wins takes the match. In the last 10 seconds, hunters gain 10% speed
+            and 15% light radius.
+          </p>
+        </article>
+      </div>
+      <p class="paper-bottom">
+        HEADPHONES RECOMMENDED · SETTINGS DO NOT PAUSE THE MATCH · ESC RELEASES
+        THE MOUSE
+      </p>
+    </section>
     <section id="lobby" class="panel hidden">
       <p class="eyebrow">TWO STRANGERS. ONE HOUSE.</p>
       <h2>Room <span id="roomcode"></span></h2>
@@ -64,19 +160,19 @@
       <div id="roster"></div>
       <div class="rules">
         <div>
-          <small>THE HUNT</small><strong>20s alone. 7s in their eyes.</strong>
-          <p>Five cycles, after 20 seconds to hide.</p>
+          <small>THE EXCHANGE</small
+          ><strong>20s hunting. 7s in their place.</strong>
+          <p>Both bodies freeze. Both players can look.</p>
         </div>
         <div>
-          <small>THE STAKES</small
-          ><strong>Six shots. No second magazine.</strong>
+          <small>THE STAKES</small><strong>Six shots. Make them count.</strong>
           <p>Hiders have no gun. Survive to win.</p>
         </div>
       </div>
       <p class="lobby-rules">
-        Round 1: host hunts. Round 2: roles reverse.<br />Round 3: both hunt.
-        First kill wins the round.<br />All three rounds are played. Most round
-        wins takes the match.
+        20 seconds to hide, then five sight exchanges.<br />Round 1: host hunts.
+        Round 2: roles reverse. Round 3: both hunt.<br />All three rounds are
+        played. Most round wins takes the match.
       </p>
       <button id="ready">I’M READY</button
       ><button id="start">OPEN THE DOORS ↗</button>
@@ -84,31 +180,56 @@
     </section>
     <div id="hud" class="hidden">
       <header>
-        <b>PARALLAX <span>/ BLACKTHORN</span></b
-        ><span id="timer">0:20</span
+        <span id="timer">0:20</span
         ><button id="settingsbtn" class="ghost">SETTINGS</button>
       </header>
       <div id="viewlabel">YOUR EYES</div>
       <div id="matchscore"></div>
       <div id="cycle"></div>
       <div id="countdown"></div>
-      <div id="crosshair">·</div>
+      <div id="swapNumber"></div>
+      <div id="swapNotice" role="status"></div>
+      <div id="swapSeal"><span>BODIES STILL · EYES OPEN</span><i></i></div>
+      <div id="crosshair">+</div>
       <div id="hitmarker"></div>
       <div id="feed"></div>
       <div id="damageflash"></div>
       <div id="waiting" class="hidden">
-        <p class="eyebrow">BLACKTHORN HOUSE</p>
+        <p class="eyebrow">THE HOUSE IS LISTENING</p>
         <h2 id="waitingtitle">Let them hide.</h2>
         <p id="waitingtext"></p>
       </div>
-      <div class="bottom">
-        <span id="health">100 / VITALITY</span><span id="weapon">UNARMED</span
-        ><span id="ammo">—</span>
+      <div id="roundEnd" class="hidden" role="status">
+        <span>THE HOUSE CLOSES ANOTHER CHAPTER</span>
+        <h2 id="roundTitle"></h2>
+        <p id="roundReason"></p>
+        <small id="roundNext"></small>
       </div>
+      <div class="bottom">
+        <div id="ammunition">
+          <span id="ammo"></span>
+          <div id="ammoIcons" aria-hidden="true"></div>
+        </div>
+        <div id="vitality">
+          <span id="health">100 / VITALITY</span>
+          <div
+            class="health-track"
+            role="progressbar"
+            aria-label="Vitality"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="100"
+          >
+            <i id="healthFill"></i>
+          </div>
+        </div>
+      </div>
+      <span id="weapon" class="hidden"></span>
+      <p id="interaction"></p>
       <p id="objective"></p>
       <p class="hint" id="lockhint">
-        CLICK TO CAPTURE MOUSE · WASD MOVE · SHIFT SPRINT · CTRL CROUCH · ESC
-        RELEASE
+        CLICK TO CAPTURE MOUSE · WASD MOVE · SHIFT SPRINT · CTRL CROUCH · E
+        INTERACT · ESC RELEASE
       </p>
     </div>
     <div id="connection" class="hidden" role="status"></div>
@@ -116,38 +237,38 @@
     <dialog id="settings">
       <p class="eyebrow">KEEP YOUR NERVE</p>
       <h2>Before the dark.</h2>
-      <label
-        >RENDER QUALITY<select id="quality">
-          <option>Low</option>
-          <option selected>Medium</option>
-          <option>High</option>
-        </select></label
-      ><label
-        >MOUSE SENSITIVITY<input
-          id="sensitivity"
-          type="range"
-          min="0.5"
-          max="3"
-          step="0.1"
-          value="1" /></label
-      ><label
-        >SOUND<input
-          id="volume"
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          value="0.3"
-      /></label>
+      <div class="setting-grid">
+        <label
+          >RENDER QUALITY<select id="quality">
+            <option>Low</option>
+            <option selected>Medium</option>
+            <option>High</option>
+          </select></label
+        ><label
+          >MOUSE SENSITIVITY<input
+            id="sensitivity"
+            type="range"
+            min="0.5"
+            max="3"
+            step="0.1"
+            value="1" /></label
+        ><label
+          >SOUND<input
+            id="volume"
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value="0.3"
+        /></label>
+      </div>
       <p>
-        WASD move · Shift sprint · Ctrl crouch<br />Mouse look · Left click
-        shoot · F3 diagnostics<br /><br />You always control your own body, even
-        when the hunter sees through the hider’s eyes. The hider keeps their own
-        view. The view is live: choose your gaze carefully.<br /><br />Two body
-        hits or one headshot. Six bullets per round. No reloads, pickups or
-        grenades.<br /><br />In the final round, both players exchange views. If
-        time or both guns run out, that round is a draw. Settings do not pause
-        the match.
+        WASD move · Shift sprint · Ctrl crouch · E interact<br />Mouse look ·
+        Left click shoot · Esc release · F3 diagnostics
+      </p>
+      <p>
+        During a sight exchange: look freely, bodies stay frozen.<br />The clock
+        keeps running. Settings do not pause the match.
       </p>
       <button id="closeSettings">BACK TO THE HOUSE</button>
     </dialog>

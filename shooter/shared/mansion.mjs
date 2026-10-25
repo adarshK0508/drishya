@@ -3,9 +3,9 @@ export const mansionRooms = [
   { name: "Library", x: -12, z: -13.5, color: 0x344d47, motif: "books" },
   { name: "Dining room", x: -12, z: 0, color: 0x713b35, motif: "diamond" },
   { name: "Chapel", x: -12, z: 13.5, color: 0x494360, motif: "cross" },
-  { name: "Study", x: 12, z: -13.5, color: 0x665535, motif: "clock" },
+  { name: "Bathroom", x: 12, z: -13.5, color: 0x406e69, motif: "tiles" },
   { name: "Kitchen", x: 12, z: 0, color: 0x3f555f, motif: "tiles" },
-  { name: "Bedroom", x: 12, z: 13.5, color: 0x623e50, motif: "flower" },
+  { name: "Master bedroom", x: 12, z: 13.5, color: 0x393856, motif: "flower" },
 ];
 export const mansionProps = [];
 const add = (kind, x, z, w, d, h, room = -1) =>
@@ -47,8 +47,9 @@ for (const x of [-14, -10])
   for (const z of [-1.9, 1.9]) add("chair", x, z, 0.42, 0.42, 1.25, 1);
 for (const z of [11.2, 15.8]) add("pew", -12, z, 2.1, 0.45, 1.35, 2);
 add("altar", -17.7, 18.8, 1.4, 0.6, 1.7, 2);
-add("desk", 12, -15, 1.8, 0.8, 1.15, 3);
-add("clock", 18.8, -18.6, 0.55, 0.4, 2.85, 3);
+add("toilet", 17, -18.7, 0.48, 0.7, 1.1, 3);
+add("basin", 12, -19, 0.85, 0.5, 1.1, 3);
+add("bathtub", 18.5, -12, 1, 2, 0.85, 3);
 add("counter", 17.9, -4.9, 2, 0.65, 1.35, 4);
 add("counter", 12, 0, 1.7, 0.8, 1.35, 4);
 add("bed", 12, 14, 1.5, 2.05, 0.75, 5);
@@ -68,3 +69,8 @@ export const mansionSpawns = {
     [12, 17],
   ],
 };
+export const interactions = {
+  portrait: { x: 8, z: -20.45, radius: 2.4 },
+  toilet: { x: 17, z: -18.7, radius: 2.1 },
+};
+export const portraitExit = { x: 0, z: -18.7, yaw: Math.PI };

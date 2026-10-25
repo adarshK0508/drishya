@@ -26,8 +26,13 @@ import {
   roleFor,
   mayMove,
   mayFire,
+  hunterBoost,
 } from "./shared/hunt.mjs";
-import { mansionSpawns } from "./shared/mansion.mjs";
+import {
+  mansionSpawns,
+  interactions,
+  portraitExit,
+} from "./shared/mansion.mjs";
 const root = path.dirname(fileURLToPath(import.meta.url));
 export const rooms = new Map();
 let nextId = 1,
@@ -127,6 +132,8 @@ function roster(r) {
     paused: !!r.pausedAt,
     pausedAt: r.pausedAt || 0,
     results: r.results || [],
+    flushed: !!r.flushed,
+    catAt: r.catAt || 0,
     players: [...r.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
@@ -136,6 +143,7 @@ function roster(r) {
       role: p.role,
       points: p.points || 0,
       connected: !!p.ws,
+      teleportUsed: !!p.teleportUsed,
     })),
   });
 }
@@ -186,7 +194,7 @@ function doSwap(r) {
   const alive = [...r.players.values()].filter((p) => p.hp > 0);
   for (const p of alive)
     p.view =
-      r.stage === "search" && r.borrowed && p.role === "hunter"
+      r.stage === "search" && r.borrowed
         ? alive.find((q) => q.id !== p.id)?.id || p.id
         : p.id;
 }
@@ -406,6 +414,36 @@ wss.on("connection", (ws, req) => {
         return;
       }
       if (!p) return;
+      if (m.type === "interact") {
+        const target = interactions[m.target];
+        if (
+          !target ||
+          r.state !== "playing" ||
+          !mayMove(r, p) ||
+          Math.hypot(p.x - target.x, p.z - target.z) > target.radius
+        )
+          return;
+        if (m.target === "portrait" && p.role === "hider" && !p.teleportUsed) {
+          Object.assign(p, portraitExit, {
+            y: 0,
+            vy: 0,
+            keys: 0,
+            queue: [],
+            inputAt: 0,
+            teleportUsed: true,
+          });
+          p.seq = p.lastSeq;
+          r.history = [];
+          emit(r, { type: "teleport", id: p.id });
+          roster(r);
+        }
+        if (m.target === "toilet" && !r.flushed) {
+          r.flushed = true;
+          emit(r, { type: "flush" });
+          roster(r);
+        }
+        return;
+      }
       if (m.type === "spectate" && p.spectator) {
         const targets = [...r.players.values()].filter(
           (q) => !q.spectator && q.hp > 0,
@@ -433,7 +471,12 @@ wss.on("connection", (ws, req) => {
         r.round = 0;
         r.results = [];
         r.pausedAt = 0;
-        for (const q of r.players.values()) q.points = q.kills = q.deaths = 0;
+        r.flushed = false;
+        r.catAt = 0;
+        for (const q of r.players.values()) {
+          q.points = q.kills = q.deaths = 0;
+          q.teleportUsed = false;
+        }
         beginRound(r, now);
       }
     } catch {
@@ -529,6 +572,12 @@ export function step(now = Date.now()) {
               r.borrowed = phase.borrowed;
               r.swapAt = phase.endsAt;
               r.cycle = phase.cycle;
+              for (const p of r.players.values()) {
+                p.queue = [];
+                p.keys = 0;
+                p.inputAt = 0;
+                p.seq = p.lastSeq;
+              }
               emit(r, {
                 type: "swap",
                 swapAt: r.swapAt,
@@ -548,7 +597,13 @@ export function step(now = Date.now()) {
             // View assignment never changes whose body this input moves or fires.
             if (mayMove(r, p)) {
               p.keys = i.keys;
-              move(p, { ...i, fov: 75 }, 1 / 60, 2);
+              move(
+                p,
+                { ...i, fov: 75 },
+                1 / 60,
+                2,
+                hunterBoost(r, p, now) ? 1.1 : 1,
+              );
             } else p.keys = 0;
             if (
               i.fire &&
@@ -611,8 +666,19 @@ export function step(now = Date.now()) {
               { keys: p.keys, yaw: p.yaw, pitch: p.pitch, fov: 75 },
               1 / 60,
               2,
+              hunterBoost(r, p, now) ? 1.1 : 1,
             );
           }
+        }
+        if (
+          !r.catAt &&
+          !r.borrowed &&
+          [...r.players.values()].some(
+            (p) => mayMove(r, p) && Math.hypot(p.x - 12, p.z - 14) < 3.8,
+          )
+        ) {
+          r.catAt = now;
+          emit(r, { type: "cat", at: now });
         }
         if (r.stage === "search") {
           const armed = [...r.players.values()].filter(
@@ -707,7 +773,7 @@ if (
   }, 4);
   const port = Number(process.env.PORT || 3000);
   server.listen(port, "0.0.0.0", () => {
-    console.log(`PARALLAX http://localhost:${port}`);
+    console.log(`Drishya http://localhost:${port}`);
     for (let list of Object.values(os.networkInterfaces()))
       for (let n of list || [])
         if (n.family === "IPv4" && !n.internal) {

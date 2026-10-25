@@ -120,6 +120,7 @@ export function buildMansion(scene) {
   cube(0, 3.9, 0, 42, 0.2, 42, dark);
   for (const p of mansionProps) {
     const { x, z, w, d, h, kind } = p;
+    if (["toilet", "bathtub", "basin"].includes(kind)) continue;
     if (kind === "wall") {
       cube(x, h / 2, z, w * 2, h, d * 2, wall);
       cube(x, 0.12, z, w * 2 + 0.06, 0.22, d * 2 + 0.06, dark);
@@ -206,7 +207,7 @@ export function buildMansion(scene) {
   for (const [i, r] of mansionRooms.entries()) {
     const col = "#" + r.color.toString(16).padStart(6, "0");
     const rug = mat(0xffffff, surface("rug", col, r.motif));
-    cube(r.x, 0.018, r.z, 8, 0.025, 8, rug);
+    if (i !== 3) cube(r.x, 0.018, r.z, 8, 0.025, 8, rug);
     // A coloured wall panel keeps even wall-facing reveals readable.
     const wallpaper = mat(0xffffff, surface("wall", col));
     cube(Math.sign(r.x) * 20.66, 2.05, r.z, 0.025, 2.5, 10, wallpaper);
@@ -304,9 +305,20 @@ export function createFigure(scene, index) {
     roughness: 1,
   });
   const metal = new THREE.MeshStandardMaterial({
-    color: 0x707478,
-    metalness: 0.6,
-    roughness: 0.4,
+    color: 0x33404d,
+    map: surface("wood", "#53616b"),
+    metalness: 0.7,
+    roughness: 0.62,
+  });
+  const copper = new THREE.MeshStandardMaterial({
+    color: 0x9c704c,
+    metalness: 0.65,
+    roughness: 0.55,
+  });
+  const walnut = new THREE.MeshStandardMaterial({
+    color: 0x6b3828,
+    map: surface("wood", "#805337"),
+    roughness: 0.85,
   });
   const mesh = (geometry, material, x, y, z) => {
     const o = new THREE.Mesh(geometry, material);
@@ -335,9 +347,39 @@ export function createFigure(scene, index) {
   cylinder.rotation.x = Math.PI / 2;
   cylinder.position.z = 0.1;
   gun.add(cylinder);
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.24, 0.12), dark);
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.24, 0.12), walnut);
   grip.position.set(0, -0.11, 0.16);
   grip.rotation.x = -0.25;
   gun.add(grip);
+  const guard = new THREE.Mesh(
+    new THREE.TorusGeometry(0.07, 0.009, 6, 16),
+    copper,
+  );
+  guard.rotation.y = Math.PI / 2;
+  guard.position.set(0, -0.1, 0.025);
+  gun.add(guard);
+  const muzzle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.04, 0.018, 12),
+    dark,
+  );
+  muzzle.rotation.x = Math.PI / 2;
+  muzzle.position.z = -0.218;
+  gun.add(muzzle);
+  for (const side of [-1, 1]) {
+    const plate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.004, 0.045, 0.18),
+      copper,
+    );
+    plate.position.set(side * 0.047, 0.01, -0.06);
+    gun.add(plate);
+    for (let n = 0; n < 4; n++) {
+      const scratch = new THREE.Mesh(
+        new THREE.BoxGeometry(0.005, 0.003, 0.025),
+        dark,
+      );
+      scratch.position.set(side * 0.051, 0.01, -0.13 + n * 0.04);
+      gun.add(scratch);
+    }
+  }
   return { group, legs, arms, gun, lastX: 0, lastZ: 0, stride: 0 };
 }

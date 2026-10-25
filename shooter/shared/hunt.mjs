@@ -3,7 +3,7 @@ export const RULES = Object.freeze({
   own: 20000,
   reveal: 7000,
   cycles: 5,
-  intermission: 5000,
+  intermission: 3000,
   ammo: 6,
 });
 export const SEARCH_MS = (RULES.own + RULES.reveal) * RULES.cycles;
@@ -30,6 +30,7 @@ export function roleFor(round, index) {
 export function mayMove(room, player) {
   return (
     !room.pausedAt &&
+    !room.borrowed &&
     player.hp > 0 &&
     (room.stage === "search" ||
       (room.stage === "hide" && player.role === "hider"))
@@ -38,8 +39,17 @@ export function mayMove(room, player) {
 export function mayFire(room, player) {
   return (
     !room.pausedAt &&
+    !room.borrowed &&
     room.stage === "search" &&
     player.hp > 0 &&
     player.role === "hunter"
+  );
+}
+export function hunterBoost(room, player, now) {
+  return (
+    room.stage === "search" &&
+    player.role === "hunter" &&
+    room.end > now &&
+    room.end - now <= 10000
   );
 }

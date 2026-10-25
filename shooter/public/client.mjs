@@ -4,10 +4,13 @@ import * as THREE from "./vendor/three.module.js";
 import { move, weapons, gunPosition } from "/shared/game.mjs";
 import { inputPacket, readSnapshot } from "/shared/protocol.mjs";
 import { buildMansion, createFigure } from "./mansion.mjs";
+import { buildDetails } from "./house-details.mjs";
+import { hunterBoost } from "/shared/hunt.mjs";
+import { interactions, mansionRooms } from "/shared/mansion.mjs";
 const $ = (id) => document.getElementById(id);
 let ws,
   id = 0,
-  token = sessionStorage.getItem("parallax-token"),
+  token = sessionStorage.getItem("drishya-token"),
   room,
   players = new Map(),
   frames = [],
@@ -41,6 +44,17 @@ let ws,
   connecting = false,
   buffer = 100;
 let lastCountdown = 4;
+let lookYaw = 0,
+  lookPitch = 0,
+  borrowedCamera = false,
+  noticeTimer;
+let currentInteraction = null;
+const ammoIcons = Array.from({ length: 6 }, () => {
+  const e = document.createElement("i");
+  e.className = "bullet";
+  $("ammoIcons").append(e);
+  return e;
+});
 window.telemetry = { snapshots: 0, fps: 0, corrections: 0, predictionError: 0 };
 const renderer = new THREE.WebGLRenderer({
   canvas: $("game"),
@@ -50,8 +64,8 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setPixelRatio(Math.min(devicePixelRatio, 0.9));
 renderer.setSize(innerWidth, innerHeight);
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x050707, 4.5, 13);
-scene.background = new THREE.Color(0x050707);
+scene.fog = new THREE.Fog(0x0a101b, 4.5, 13);
+scene.background = new THREE.Color(0x0a101b);
 const camera = new THREE.PerspectiveCamera(
   75,
   innerWidth / innerHeight,
@@ -67,16 +81,39 @@ scene.add(new THREE.HemisphereLight(0x73858a, 0x241c18, 0.22));
 const lantern = new THREE.PointLight(0xffdab0, 28, 11, 1.45);
 scene.add(lantern);
 buildMansion(scene);
+const details = buildDetails(scene);
 const effects = new Effects(scene);
 const figures = [createFigure(scene, 0), createFigure(scene, 1)];
 function myRole() {
   return room?.players.find((p) => p.id === id)?.role || "hider";
 }
+function myRoomName() {
+  return (
+    mansionRooms.find(
+      (r) => Math.abs(local.x - r.x) < 8.8 && Math.abs(local.z - r.z) < 6.5,
+    )?.name || "Corridor"
+  );
+}
 function canMove() {
   return (
     !room?.paused &&
+    !room?.borrowed &&
     (room?.stage === "search" ||
       (room?.stage === "hide" && myRole() === "hider"))
+  );
+}
+function speedScale(now = Date.now() + offset) {
+  return room && hunterBoost(room, { role: myRole() }, now) ? 1.1 : 1;
+}
+function announce(text) {
+  clearTimeout(noticeTimer);
+  $("swapNotice").textContent = text;
+  $("swapNotice").classList.remove("announce");
+  void $("swapNotice").offsetWidth;
+  $("swapNotice").classList.add("announce");
+  noticeTimer = setTimeout(
+    () => $("swapNotice").classList.remove("announce"),
+    2000,
   );
 }
 let audio;
@@ -115,6 +152,43 @@ function beep(freq = 440, duration = 0.06) {
   o.onended = () => {
     o.disconnect();
     g.disconnect();
+  };
+}
+// A filtered noise transient and low heel thump, rather than a UI beep.
+function noiseSound(duration, gain, frequency, pan = 0) {
+  if (!audio || audio.state !== "running" || +$("volume").value === 0) return;
+  const buffer = audio.createBuffer(
+    1,
+    Math.ceil(audio.sampleRate * duration),
+    audio.sampleRate,
+  );
+  const data = buffer.getChannelData(0);
+  for (let n = 0; n < data.length; n++)
+    data[n] = (Math.random() * 2 - 1) * (1 - n / data.length);
+  const source = audio.createBufferSource(),
+    filter = audio.createBiquadFilter(),
+    volume = audio.createGain(),
+    stereo = audio.createStereoPanner();
+  source.buffer = buffer;
+  filter.type = "lowpass";
+  filter.frequency.value = frequency;
+  volume.gain.setValueAtTime(+$("volume").value * gain, audio.currentTime);
+  volume.gain.exponentialRampToValueAtTime(
+    0.0001,
+    audio.currentTime + duration,
+  );
+  stereo.pan.value = Math.max(-1, Math.min(1, pan));
+  source
+    .connect(filter)
+    .connect(volume)
+    .connect(stereo)
+    .connect(audio.destination);
+  source.start();
+  source.onended = () => {
+    source.disconnect();
+    filter.disconnect();
+    volume.disconnect();
+    stereo.disconnect();
   };
 }
 function send(m) {
@@ -172,7 +246,8 @@ function connect() {
         local = { ...me };
         pending = pending.filter((i) => i.seq > s.ack);
         if (me.hp > 0 && canMove())
-          for (let i of pending) move(local, i, 1 / 60, map);
+          for (let i of pending)
+            move(local, i, 1 / 60, map, speedScale(i.time));
         let error = Math.hypot(oldX - local.x, oldZ - local.z);
         if (snapshots > 1) {
           errorSum += error;
@@ -197,7 +272,7 @@ function connect() {
       snapshots = 0;
       seq = Math.max(seq, m.seq || 0);
       token = m.token;
-      sessionStorage.setItem("parallax-token", token);
+      sessionStorage.setItem("drishya-token", token);
       $("menu").classList.add("hidden");
       $("lobby").classList.remove("hidden");
       $("roomcode").textContent = m.code;
@@ -251,8 +326,30 @@ function connect() {
       room.swapAt = m.swapAt;
       room.borrowed = m.borrowed;
       room.cycle = m.cycle;
+      pending = [];
+      keys = 0;
+      fire = false;
       lastCountdown = 6;
       beep(m.borrowed ? 900 : 600, 0.25);
+    }
+    if (m.type === "teleport") {
+      if (m.id === id) {
+        pending = [];
+        frames = [];
+        keys = 0;
+        fire = false;
+        syncPose = true;
+        announce("THE PORTRAIT LETS YOU THROUGH");
+        noiseSound(0.8, 0.2, 900);
+      }
+    }
+    if (m.type === "flush") {
+      details.flush();
+      noiseSound(1.6, 0.5, 1500);
+    }
+    if (m.type === "cat") {
+      room.catAt = m.at;
+      if (Math.hypot(local.x - 12, local.z - 14) < 9) beep(680, 0.18);
     }
     if (m.type === "shot") {
       beep(m.id === id ? 180 : 100, 0.06);
@@ -332,6 +429,7 @@ function connect() {
 }
 $("join").onclick = () => {
   audio ||= new AudioContext();
+  audio.resume();
   startMusic();
   connect();
 };
@@ -340,7 +438,22 @@ $("volume").oninput = () => {
 };
 $("ready").onclick = () => send({ type: "ready" });
 $("start").onclick = () => send({ type: "start" });
-$("help").onclick = $("settingsbtn").onclick = () => {
+$("enter").onclick = () => {
+  $("entryForm").classList.remove("hidden");
+  $("enter").classList.add("hidden");
+  $("name").focus();
+};
+$("help").onclick = () => {
+  $("menu").classList.add("hidden");
+  $("tutorial").classList.remove("hidden");
+  $("home").focus();
+};
+$("home").onclick = () => {
+  $("tutorial").classList.add("hidden");
+  $("menu").classList.remove("hidden");
+  $("help").focus();
+};
+$("settingsbtn").onclick = () => {
   document.exitPointerLock?.();
   $("settings").showModal();
   keys = 0;
@@ -375,6 +488,9 @@ addEventListener("keydown", (e) => {
     $("stats").classList.toggle("hidden", !debug);
   }
   if (!active || $("settings").open) return;
+  if (e.code === "KeyE" && !e.repeat && currentInteraction && canMove()) {
+    send({ type: "interact", target: currentInteraction });
+  }
   if (keymap[e.code]) {
     keys |= keymap[e.code];
     e.preventDefault();
@@ -402,7 +518,20 @@ $("game").onclick = async () => {
   }
 };
 addEventListener("mousemove", (e) => {
-  if (!active || (!document.pointerLockElement && !e.buttons)) return;
+  if (
+    !active ||
+    $("settings").open ||
+    (!document.pointerLockElement && !e.buttons)
+  )
+    return;
+  if (room?.borrowed) {
+    lookYaw -= e.movementX * 0.002 * +$("sensitivity").value;
+    lookPitch = Math.max(
+      -1.5,
+      Math.min(1.5, lookPitch - e.movementY * 0.002 * +$("sensitivity").value),
+    );
+    return;
+  }
   yaw -= e.movementX * 0.002 * +$("sensitivity").value;
   yaw = ((yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
   pitch = Math.max(
@@ -430,7 +559,7 @@ fixedTicker(() => {
   const pad = navigator.getGamepads?.()[0];
   let inputKeys = keys,
     inputFire = fire;
-  if (pad) {
+  if (pad && !$("settings").open) {
     const dead = 0.22;
     if (pad.axes[1] < -dead) inputKeys |= 1;
     if (pad.axes[1] > dead) inputKeys |= 2;
@@ -439,6 +568,12 @@ fixedTicker(() => {
     if (pad.buttons[0]?.pressed) inputKeys |= 32;
     if (pad.buttons[10]?.pressed) inputKeys |= 16;
     inputFire ||= !!pad.buttons[7]?.pressed;
+    const savedYaw = yaw,
+      savedPitch = pitch;
+    if (room.borrowed) {
+      yaw = lookYaw;
+      pitch = lookPitch;
+    }
     yaw -=
       (Math.abs(pad.axes[2]) > dead ? pad.axes[2] : 0) *
       0.045 *
@@ -454,6 +589,12 @@ fixedTicker(() => {
             +$("sensitivity").value,
       ),
     );
+    if (room.borrowed) {
+      lookYaw = yaw;
+      lookPitch = pitch;
+      yaw = savedYaw;
+      pitch = savedPitch;
+    }
   }
   if (!canMove() || $("settings").open) inputKeys = 0;
   inputFire &&=
@@ -476,14 +617,22 @@ fixedTicker(() => {
   ws.send(inputPacket(i));
   pending.push(i);
   if (pending.length > 120) pending.shift();
-  if (players.get(id)?.hp > 0 && canMove()) move(local, i, 1 / 60, map);
+  const oldX = local.x,
+    oldZ = local.z;
+  if (players.get(id)?.hp > 0 && canMove())
+    move(local, i, 1 / 60, map, speedScale(i.time));
   if (
     inputKeys & 15 &&
+    Math.hypot(local.x - oldX, local.z - oldZ) > 0.001 &&
     Date.now() - lastStep > (inputKeys & 16 ? 250 : 390) &&
     players.get(id)?.hp > 0
   ) {
     lastStep = Date.now();
-    beep(inputKeys & 16 ? 108 : 88, 0.025);
+    noiseSound(
+      0.14,
+      inputKeys & 32 ? 0.09 : 0.24,
+      myRoomName() === "Bathroom" ? 1800 : 650,
+    );
   }
 });
 setInterval(() => send({ type: "ping", time: Date.now() }), 1000);
@@ -502,7 +651,9 @@ function render(now) {
     }
   } else lowSince = 0;
   let me = players.get(id),
-    view = players.get(me?.view) || me,
+    view = room?.borrowed
+      ? [...players.values()].find((p) => p.id !== id) || me
+      : me,
     renderPlayers = players,
     target = Date.now() + offset - buffer;
   let a = frames.findLast((f) => f.time <= target),
@@ -514,7 +665,7 @@ function render(now) {
       pb = b?.players.get(p.id) || pa,
       x = pa.x + (pb.x - pa.x) * factor,
       z = pa.z + (pb.z - pa.z) * factor;
-    // Own body uses the same predicted pose as controls, including during swaps.
+    // Borrowed looking never rotates either physical body.
     const pose =
       p.id === id
         ? { ...local, yaw, pitch }
@@ -550,12 +701,30 @@ function render(now) {
     });
     figure.lastX = pose.x;
     figure.lastZ = pose.z;
+    if (
+      active &&
+      p.id !== id &&
+      canMove() &&
+      speed > 0.005 &&
+      now - (figure.lastStep || 0) > (p.keys & 16 ? 270 : 420)
+    ) {
+      const distance = Math.hypot(pose.x - local.x, pose.z - local.z);
+      if (distance < 12) {
+        const pan =
+          ((pose.x - local.x) * Math.cos(yaw) -
+            (pose.z - local.z) * Math.sin(yaw)) /
+          Math.max(1, distance);
+        noiseSound(0.15, 0.3 * Math.pow(1 - distance / 12, 2), 750, pan);
+      }
+      figure.lastStep = now;
+    }
     const gun = gunPosition(pose, 0.52);
     figure.gun.position.set(gun.x, gun.y, gun.z);
     figure.gun.rotation.order = "YXZ";
     figure.gun.rotation.set(pose.pitch, pose.yaw, 0);
     figure.gun.visible =
       active &&
+      !room?.borrowed &&
       p.hp > 0 &&
       room?.players.find((q) => q.id === p.id)?.role === "hunter";
   }
@@ -564,6 +733,15 @@ function render(now) {
     figures[n].gun.visible = false;
   }
   if (active && view) {
+    const isBorrowed = !!room.borrowed && room.stage === "search";
+    if (isBorrowed !== borrowedCamera) {
+      borrowedCamera = isBorrowed;
+      if (isBorrowed) {
+        lookYaw = view.yaw;
+        lookPitch = view.pitch;
+        announce("YOU ARE IN THEIR EYES");
+      } else if (room.stage === "search") announce("YOUR EYES RETURN · MOVE");
+    }
     let own = view.id === id,
       va = a?.players.get(view.id) || view,
       vb = b?.players.get(view.id) || va;
@@ -573,8 +751,8 @@ function render(now) {
         ((own ? local.crouched : view.crouched) ? 0.95 : 1.5),
       own ? local.z : va.z + (vb.z - va.z) * factor,
     );
-    camera.rotation.y = own ? yaw : view.yaw;
-    camera.rotation.x = own ? pitch : view.pitch;
+    camera.rotation.y = own ? yaw : lookYaw;
+    camera.rotation.x = own ? pitch : lookPitch;
     const desiredFov = 75;
     if (camera.fov !== desiredFov) {
       camera.fov = desiredFov;
@@ -608,7 +786,7 @@ function render(now) {
                 ? myRole() === "hider"
                   ? "HIDER · SURVIVE"
                   : "HUNTER · YOUR EYES"
-                : "BORROWED EYES · YOU STILL MOVE YOUR OWN BODY";
+                : "BORROWED EYES · LOOK AROUND";
       document.body.classList.toggle(
         "borrowed",
         !own && room.stage === "search",
@@ -616,6 +794,10 @@ function render(now) {
       const untilEnd = room.stage === "search" ? room.end : room.stageEnd;
       const clockNow = room.pausedAt || Date.now() + offset;
       const left = Math.max(0, Math.ceil((untilEnd - clockNow) / 1000));
+      $("timer").classList.toggle(
+        "urgent",
+        room.stage === "search" && left <= 10,
+      );
       $("timer").textContent =
         Math.floor(left / 60) + ":" + String(left % 60).padStart(2, "0");
       const count = Math.max(0, Math.ceil((room.swapAt - clockNow) / 1000));
@@ -631,23 +813,44 @@ function render(now) {
       if (count > 3) lastCountdown = 4;
       $("countdown").textContent =
         room.stage === "search"
-          ? (room.borrowed
-              ? myRole() === "hider"
-                ? "YOUR EYES ARE EXPOSED · "
-                : "REVEAL · "
-              : "NEXT REVEAL · ") +
+          ? (room.borrowed ? "YOUR EYES RETURN IN " : "NEXT REVEAL · ") +
             count +
             "s"
-          : room.stage === "intermission"
-            ? "NEXT · " + left + "s"
-            : left + "s";
+          : room.stage === "hide"
+            ? "THE HUNT BEGINS IN " + left + "s"
+            : "";
+      const warning =
+        room.stage === "search" && !room.borrowed && count <= 3 && count > 0;
+      $("swapNumber").textContent = warning ? count : "";
+      document.body.style.setProperty(
+        "--swap-progress",
+        Math.max(0, (room.swapAt - clockNow) / 7000),
+      );
+      const intermission = room.stage === "intermission";
+      $("roundEnd").classList.toggle("hidden", !intermission);
+      if (intermission) {
+        $("roundTitle").textContent = "ROUND " + room.round + " ENDED";
+        const result = room.results.at(-1);
+        $("roundReason").textContent =
+          (result?.name || "Draw") + " · " + (result?.reason || "");
+        $("roundNext").textContent =
+          (room.round === 3 ? "MATCH RESULTS IN " : "NEXT ROUND IN ") +
+          left +
+          "s";
+      }
       $("health").textContent = (me?.hp || 0) + " / VITALITY";
+      $("healthFill").style.width = (me?.hp || 0) + "%";
+      $("healthFill").parentElement.setAttribute("aria-valuenow", me?.hp || 0);
+      $("vitality").classList.toggle("hurt", me.hp <= 50);
       $("weapon").textContent =
-        myRole() === "hider" ? "UNARMED · STAY HIDDEN" : "SIX-SHOT REVOLVER";
+        myRole() === "hider" ? "UNARMED · STAY HIDDEN" : "";
       $("ammo").textContent =
-        myRole() === "hider" ? "—" : (me?.ammo || 0) + " / 6 ROUNDS";
-      $("crosshair").style.opacity =
-        myRole() === "hunter" && own && room.stage === "search" ? ".7" : "0";
+        myRole() === "hider" ? "STAY HIDDEN" : (me?.ammo || 0) + " / 6 ROUNDS";
+      $("ammoIcons").classList.toggle("hidden", myRole() === "hider");
+      ammoIcons.forEach((icon, n) =>
+        icon.classList.toggle("spent", n >= me.ammo),
+      );
+      $("crosshair").style.opacity = room.stage === "search" ? ".7" : "0";
       $("matchscore").textContent =
         "ROUND " +
         room.round +
@@ -658,21 +861,75 @@ function render(now) {
           ? "CYCLE " + (room.cycle || 1) + " / 5"
           : room.stage === "hide"
             ? "20 SECONDS TO DISAPPEAR"
-            : "BLACKTHORN HOUSE";
+            : "THE HOUSE IS LISTENING";
       $("objective").textContent =
         room.stage === "intermission"
           ? room.results.at(-1)?.name + " · " + room.results.at(-1)?.reason
           : room.round === 3
             ? "Both players hunt. First kill wins this round."
             : myRole() === "hider"
-              ? "Use furniture as cover. Your gaze reveals the room."
+              ? "Find cover. Remember where their eyes take you."
               : "Read the rugs, clocks and wallpaper. Make every shot count.";
+      if (room.borrowed)
+        $("objective").textContent =
+          "Both bodies frozen · Mouse to look · Round clock continues";
+      else if (hunterBoost(room, { role: myRole() }, clockNow))
+        $("objective").textContent =
+          "LAST LIGHT · Speed +10% · Illumination +15%";
+      currentInteraction = null;
+      $("interaction").textContent = "";
+      if (canMove() && me.hp > 0) {
+        for (const [name, target] of Object.entries(interactions)) {
+          if (
+            Math.hypot(local.x - target.x, local.z - target.z) > target.radius
+          )
+            continue;
+          if (name === "portrait") {
+            if (myRole() !== "hider") continue;
+            if (room.players.find((p) => p.id === id)?.teleportUsed) {
+              $("interaction").textContent =
+                "The portrait is silent. Your passage is spent.";
+              continue;
+            }
+            $("interaction").textContent =
+              "[E] Enter the portrait · Once this match";
+          } else {
+            if (room.flushed) continue;
+            $("interaction").textContent = "[E] Flush the toilet";
+          }
+          currentInteraction = name;
+          break;
+        }
+      }
     }
   } else {
     camera.position.set(0.7, 1.65, 17.5);
     camera.rotation.set(-0.03, Math.sin(now * 0.00008) * 0.12, 0);
     $("waiting").classList.add("hidden");
+    document.body.classList.remove("borrowed");
   }
+  const clockNow = room?.pausedAt || Date.now() + offset;
+  const warning =
+    active && room?.stage === "search" && !room.borrowed
+      ? Math.max(0, 1 - (room.swapAt - clockNow) / 3000)
+      : 0;
+  const boost =
+    active && room && hunterBoost(room, { role: myRole() }, clockNow)
+      ? 1.15
+      : 1;
+  lantern.distance = 11 * boost * (1 - warning * 0.78);
+  lantern.intensity = 28 * (1 - warning * 0.55);
+  lantern.color.setHex(warning && myRole() === "hider" ? 0xd94936 : 0xffdab0);
+  scene.fog.near = 4.5 * (1 - warning * 0.8) * boost;
+  scene.fog.far = 13 * (1 - warning * 0.8) * boost;
+  $("iris").style.setProperty("--iris-clear", 65 - warning * 60 + "%");
+  $("iris").style.setProperty("--iris-edge", 110 - warning * 90 + "%");
+  $("iris").style.setProperty(
+    "--iris-color",
+    myRole() === "hider" ? "#390b13" : "#070914",
+  );
+  $("iris").style.setProperty("--iris-opacity", warning);
+  details.update(now, room, clockNow);
   lantern.position.copy(camera.position);
   lantern.position.y += 0.15;
   if (now - lastDebug >= 200) {
@@ -691,6 +948,12 @@ function render(now) {
       active,
       ownId: id,
       yaw,
+      cameraYaw: camera.rotation.y,
+      cameraPosition: { x: camera.position.x, z: camera.position.z },
+      canMove: canMove(),
+      speedScale: speedScale(),
+      lightRadius: lantern.distance,
+      teleportUsed: room?.players.find((p) => p.id === id)?.teleportUsed,
       roundEnd: room?.end,
       phaseEnd: room?.swapAt,
       lastAck: me?.seq,

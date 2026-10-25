@@ -1,6 +1,6 @@
-# PARALLAX — Blackthorn House
+# दृश्य — Drishya
 
-A two-player LAN horror game with live perspective borrowing. The active implementation is in `shooter/`; the original Unity prototype is preserved at the repository root.
+A two-player LAN horror game about borrowed sight. The active browser game is in `shooter/`; the original Unity prototype remains at the repository root.
 
 ## Play
 
@@ -10,19 +10,18 @@ npm install
 npm start
 ```
 
-Open the printed address on two desktop browsers. The second laptop uses the host laptop's LAN address, then the same room code. Both players ready up; the host starts. Node.js 20+ and WebGL are required.
+Open the printed address in two desktop browsers. The second laptop uses the host laptop's LAN address and the same room code. Both players ready up; the host starts. Node.js 20+ and WebGL are required.
 
-The mansion has six rooms, real furniture cover, room-specific rugs and patterned ceilings, clocks, low-poly human figures, and a small sphere of illumination. See [game rules and controls](shooter/README.md).
+## Rules
 
-## Revised rules
+- Round 1: host hunts. Round 2: roles reverse. Each begins with 20 seconds to hide while the hunter waits.
+- Five cycles of 20 seconds hunting and 7 seconds of exchanged vision make a 135-second hunt.
+- A three-second warning narrows both players' illumination, with a red tint for the hider.
+- During each exchange, both bodies freeze. Each player independently looks around from the other's position. Shooting and interactions are disabled. **The round timer keeps running.** Original aim returns afterward.
+- Hunters have six bullets: two body hits or one headshot kills. The hider wins by surviving or exhausting the hunter's ammunition.
+- During the last 10 seconds, hunters gain 10% movement speed and 15% illumination radius. The swap freeze still takes priority.
+- Round 3: both hunt; first kill wins. Timeout or both empty guns means a draw.
+- Each round ends with a centered announcement for 3 seconds, including the final round before results. Most round wins takes the match.
+- The bathroom portrait teleports only hiders to the corridor portrait, once per player per entire match. Press E nearby. E also flushes the toilet. The bedroom cat flees when approached.
 
-- Round 1: host hunts, other player hides. Round 2 reverses the roles.
-- Each starts with 20 seconds for hiding while the hunter waits behind a blackout screen.
-- Search repeats 20 seconds of own POV and 7 seconds of live hider POV, five times. **That is 135 seconds of search**, plus hiding time.
-- Both players may move during reveals. Only the hunter borrows eyes; the hider retains their own view.
-- Hunters have one six-shot revolver. Hiders are unarmed. Two body shots or one headshot kills.
-- Survival or an empty hunter's gun wins the round for the hider.
-- Round 3 starts with a five-second countdown. Both players hunt and exchange POV. First kill wins the round; timeout or both empty guns is a draw.
-- All three rounds are played. Most round wins takes the match; equal scores produce a draw.
-
-Run `npm test` inside `shooter/` for the unit, server and two-browser checks. [Verification details](shooter/TEST_REPORT.md).
+See [controls and implementation](shooter/README.md). Run `npm test` inside `shooter/` for server and two-browser verification.

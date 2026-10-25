@@ -45,7 +45,7 @@ export function blocked(x, z, map = 0, r = 0.4, y = 0) {
     )
   );
 }
-export function move(p, i, dt = DT, map = 0) {
+export function move(p, i, dt = DT, map = 0, speedScale = 1) {
   let x = (i.keys & 8 ? 1 : 0) - (i.keys & 4 ? 1 : 0),
     z = (i.keys & 2 ? 1 : 0) - (i.keys & 1 ? 1 : 0);
   let l = Math.hypot(x, z) || 1,
@@ -59,6 +59,7 @@ export function move(p, i, dt = DT, map = 0) {
           : map === 2
             ? 3.8
             : 5.4;
+  s *= speedScale;
   let dx = ((x * Math.cos(i.yaw) + z * Math.sin(i.yaw)) / l) * s * dt,
     dz = ((-x * Math.sin(i.yaw) + z * Math.cos(i.yaw)) / l) * s * dt;
   if (!blocked(p.x + dx, p.z, map, 0.4, p.y)) p.x += dx;

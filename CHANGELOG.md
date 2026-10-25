@@ -32,3 +32,12 @@
 ## Project scope — shooter only
 - Narrowed the repository to the shooter and updated root documentation to reflect the final project choice.
 
+
+## 2026-10-25 — Drishya identity and reciprocal sight exchange
+
+- Rebranded the browser game as दृश्य, with an indigo, aged-paper and copper identity, English newspaper guide, and a two-step entrance.
+- Made every seven-second sight exchange reciprocal: frozen bodies, independent looking, disabled shooting/interactions, unchanged round clock, countdown iris and return animations.
+- Added three-second round-end cards, a centered clock, vitality meter, six cartridge icons and compact themed settings.
+- Added distinct bathroom fixtures, flushing, the supplied framed portraits, hider-only once-per-match escape, four-poster master bedroom and a sleeping/fleeing cat.
+- Added textured revolver details and footstep audio; applied the approved final-10-second hunter speed/light boosts.
+- Verified server rules and two-browser interaction flow; documented remaining headphone/LAN/balance playtesting.

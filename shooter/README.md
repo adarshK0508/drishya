@@ -1,67 +1,58 @@
-# PARALLAX — Blackthorn House
+# दृश्य — Drishya
 
-Two players enter an old, dark mansion. One hunts through brief glimpses of the other's eyes. A local Node server owns movement, damage, ammunition, role assignment and round progression.
+Two players enter a mansion. A local Node server owns movement, damage, ammunition, roles, round progression, teleport permissions, flushing, and the cat's wake-up time.
 
 ## Start
-
-Node 20+ and a desktop browser with WebGL:
 
 ```powershell
 npm install
 npm start
 ```
 
-Default address: http://localhost:3000. The server prints a LAN address for the other laptop. Both players must use the **same server**, room code, and ready up. The first player is host and hunts first. Exactly two players are required; spectators are disabled.
-
-For another port in PowerShell:
-
-```powershell
-$env:PORT = '3001'
-npm start
-```
+Open the printed local address on the host computer. The second laptop opens the printed LAN address on the same network. Enter the same room code. Both players select Ready; the host opens the doors. Node 20+, WebGL, and desktop browsers are required.
 
 ## Controls
 
-WASD move; mouse look; Shift sprint; Ctrl crouch; left click fire. Click the game to capture the mouse, then click to shoot. Escape releases it. F3 toggles diagnostics. Gamepads support sticks, left-stick press for sprint, A for crouching, and right trigger for shooting. Settings do not pause the online match.
-
-There is one revolver with six rounds per hunter per round. No reloads, other weapons, ammunition pickups, health pickups, or grenades. Each player has 100 health: body damage is 50, head damage is 100. The hider has no weapon. Crouching lowers both the camera and hitbox. Jumping is disabled in the mansion.
+WASD move; mouse look; Shift sprint; Ctrl crouch; E interact; left click shoot. Click the game to capture the mouse. Escape releases it. F3 shows diagnostics. Settings do not pause the match. Gamepads retain movement, looking, sprint, crouch and shooting support; use E for house interactions.
 
 ## Three rounds
 
-| Round | Roles | Setup | Search |
-| --- | --- | --- | --- |
-| 1 | Host hunts, guest hides | 20 seconds hiding; hunter locked and blinded | 20s own POV + 7s hider POV, five cycles |
-| 2 | Guest hunts, host hides | Same setup and spawn positions with roles reversed | Same five cycles |
-| 3 | Both hunt | Five-second countdown at opposing room spawns | Same cycle, with reciprocal POV swaps; first kill wins |
+Round one: host hunts. Round two: roles reverse. Each begins with 20 seconds for the hider to disappear. Round three: both hunt after a five-second preparation countdown.
 
-Five cycles take **135 seconds**, not 120. This follows the final requested cycle count and durations. Both players move during reveals; movement and firing always belong to the original body. The hider controls the direction of the live view. The camera owner's body is hidden, and their illumination travels with the view. Everyone's FOV is fixed at 75 degrees; visibility distance is limited by an 11m light and fog fading to black at 13m.
+Search lasts five cycles of 20 seconds in your own view and 7 seconds in the opponent's position (135 seconds total). The last three seconds before an exchange show a large countdown and progressively narrow visibility; the hider's warning turns red. Movement remains available during that warning.
 
-A kill ends a round immediately. In rounds 1–2, timeout or the hunter using all six bullets without killing awards the hider a point. In round 3, timeout or both players exhausting their ammunition produces a draw. Five seconds separate rounds. All three rounds are played, even at 2–0. Most round wins takes the match; equal points give a match draw.
+During the exchange, **both bodies freeze**, shooting and interactions are disabled, and each player independently rotates their borrowed camera. Neither player's physical aim changes. The round clock continues. Your own original aim returns when the exchange ends. Return labels, sounds, a breathing frame, and a seven-second progress bar mark the boundaries.
 
-A disconnect pauses the match for up to 30 seconds. Rejoining with the browser session token restores the same player and shifts the deadlines. Failure to return forfeits the match to the connected player. A rematch resets scores, ammo and roles and requires both players to ready up again.
+Hunters have six bullets. Two body hits or one headshot kills. Hiders have no gun. Surviving or exhausting the hunter's ammunition wins rounds one and two for the hider. In round three, timeout or both guns being empty is a draw. In the last 10 seconds, hunters gain 10% speed and 15% illumination radius; a simultaneous exchange still freezes movement. These are starting balance values, not a guarantee of equal win rates.
 
-## Mansion and performance
+A centered round-specific card stays for 3 seconds after every round. The final card leads to results. All three rounds are played. Most round wins wins the match.
 
-The mansion occupies 42 × 42 metres: Library, Study, Dining Room, Kitchen, Chapel and Bedroom, joined by a central hall and doors between adjacent rooms. Wardrobes, freestanding screens, bookcases, desks, counters, beds and pews provide cover. Walkable space behind tall furniture allows hiding and repositioning. Rugs, wall panels, clocks and patterned ceilings provide clues even when the hider avoids looking at a doorway.
+A disconnected player gets a 30-second reconnect grace period, during which the match pauses. A browser session token restores their identity, including a spent portrait passage. A fresh match resets the passage, cat, toilet, scores and ammunition.
 
-Geometry and textures are generated locally. Static boxes share geometry and are batched by material with instancing. Two human figures use faceted heads, coats, arms and animated legs. A single point light follows the current viewpoint. There are no expensive real-time shadows or external assets. Pixel ratio is capped and drops to 0.55 after sustained low FPS. The scene is approximately 5,200 triangles and 50 draw calls; actual FPS depends on the machine.
+## The house
+
+The 42 × 42 metre mansion has a library, dining room, chapel, kitchen, bathroom and master bedroom. Shared geometry defines movement and bullet cover. The bathroom has a claw-foot bath, pedestal basin, porcelain toilet, towel rail, tiled floor and framed portrait. Press E nearby to flush the poop away. Only the hider can enter the bathroom portrait: **one use per player per match**, arriving beside the large corridor portrait. The four-poster bedroom includes a vanity, curtains and a sleeping cat that jumps down and flees when a player approaches.
+
+The supplied photographs live locally in `public/assets/`. Their original files are preserved; scene materials add muted engraved coloring. Other textures and geometry are generated locally. Footsteps use filtered noise transients with material-dependent tone; nearby opponent steps are attenuated and panned. Flush audio and the ambient drone use Web Audio. There are no external runtime asset requests.
+
+The visual identity uses indigo ink, aged paper, oxidized copper and vermilion. The entrance title appears only in Hindi; instructions are in English. How to Play is an illustrated newspaper with screenshots and captions.
 
 ## Implementation
 
-- `shared/mansion.mjs`: room layout, furniture and common collision boxes.
-- `shared/hunt.mjs`: timing, roles, movement and firing permissions.
-- `shared/game.mjs`: shared movement, crouching, ray tests and gun positions.
-- `server.mjs`: two-player admission, authoritative round states, damage, reconnect and snapshots.
-- `public/mansion.mjs`: generated architecture, surface patterns and human figures.
-- `public/client.mjs`: input prediction, camera borrowing, interpolation, HUD and audio.
+- `shared/hunt.mjs`: phase durations, server action permissions, hunter boost.
+- `shared/mansion.mjs`: rooms, fixtures, collision, interaction locations and portrait exit.
+- `shared/game.mjs`: deterministic movement, ray tests and weapon anchors.
+- `server.mjs`: authoritative matches and house interaction state.
+- `public/mansion.mjs`: architecture, generated textures and figures/revolvers.
+- `public/house-details.mjs`: furnishings, portraits, animated flushing and cat.
+- `public/client.mjs`: prediction, independent borrowed camera, HUD, interaction prompts and audio.
 
-Existing 28-byte inputs and delta snapshots remain. Snapshots now include crouching in their flags. The server clamps lag compensation to 200ms, checks barrel cover and enforces the single weapon regardless of requested weapon index. Old arena geometry remains solely for legacy movement tests.
+Static repeated details are instanced by geometry/material. A point light follows the viewed location. Quality adjusts rendering resolution; performance depends on the GPU and viewport.
 
 ## Verify
 
 ```powershell
-npx playwright install chromium
 npm test
 ```
 
-The browser check uses the repository's `.browsers` installation if present. It launches its own isolated server, inspects two browser clients, and accelerates round deadlines in the fixture. See `TEST_REPORT.md` for the current checks and limits. Earlier arena screenshots, soak scripts and POV regression harness are historical and do not validate the mansion rules.
+Tests use the existing `.browsers` Chromium installation if present. Otherwise install the matching Playwright browser first. The browser test uses two isolated clients and accelerates round deadlines in its fixture. Server tests check the real exact timing boundaries. Historical arena/POV scripts are retained for reference and do not validate the current mansion rules.

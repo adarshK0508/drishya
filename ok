@@ -1,0 +1,34 @@
+ CHANGELOG.md                                |   9 [32m+[m
+ README.md                                   |  29 [32m+[m[31m-[m
+ shooter/README.md                           |  59 [32m+[m[31m--[m
+ shooter/TEST_REPORT.md                      |  42 [32m+[m[31m-[m
+ shooter/docs/drishya-bath.png               | Bin [31m0[m -> [32m287429[m bytes
+ shooter/docs/drishya-bathroom.png           | Bin [31m0[m -> [32m300642[m bytes
+ shooter/docs/drishya-bedroom.png            | Bin [31m0[m -> [32m380069[m bytes
+ shooter/docs/drishya-guide.png              | Bin [31m0[m -> [32m244837[m bytes
+ shooter/docs/drishya-menu.png               | Bin [31m0[m -> [32m448105[m bytes
+ shooter/docs/drishya-round-end.png          | Bin [31m0[m -> [32m262047[m bytes
+ shooter/docs/drishya-settings.png           | Bin [31m0[m -> [32m193109[m bytes
+ shooter/docs/drishya-swap-warning.png       | Bin [31m0[m -> [32m313289[m bytes
+ shooter/docs/mansion-borrowed.png           | Bin [31m246117[m -> [32m284153[m bytes
+ shooter/docs/mansion-library.png            | Bin [31m298522[m -> [32m312498[m bytes
+ shooter/package-lock.json                   |   4 [32m+[m[31m-[m
+ shooter/package.json                        |   2 [32m+[m[31m-[m
+ shooter/public/assets/bathroom-portrait.png | Bin [31m0[m -> [32m109345[m bytes
+ shooter/public/assets/corridor-portrait.png | Bin [31m0[m -> [32m130433[m bytes
+ shooter/public/assets/guide-hide.png        | Bin [31m0[m -> [32m347735[m bytes
+ shooter/public/assets/guide-portrait.png    | Bin [31m0[m -> [32m433345[m bytes
+ shooter/public/assets/guide-swap.png        | Bin [31m0[m -> [32m291348[m bytes
+ shooter/public/client.mjs                   | 321 [32m+++++++++++[m[31m--[m
+ shooter/public/house-details.mjs            | 377 [32m+++++++++++++++[m
+ shooter/public/index.html                   | 261 [32m++++++++[m[31m---[m
+ shooter/public/mansion.mjs                  |  52 [32m+[m[31m-[m
+ shooter/public/style.css                    | 704 [32m++++++++++++++++++++++++++++[m
+ shooter/server.mjs                          |  76 [32m++[m[31m-[m
+ shooter/shared/game.mjs                     |   3 [32m+[m[31m-[m
+ shooter/shared/hunt.mjs                     |  12 [32m+[m[31m-[m
+ shooter/shared/mansion.mjs                  |  14 [32m+[m[31m-[m
+ shooter/test/browser.mjs                    | 180 [32m++++++[m[31m-[m
+ shooter/test/match-flow.test.mjs            |  84 [32m+++[m[31m-[m
+ shooter/test/visuals.mjs                    | 120 [32m+++++[m
+ 33 files changed, 2137 insertions(+), 212 deletions(-)
